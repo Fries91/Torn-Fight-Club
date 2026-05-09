@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Fight Club - Fries91
 // @namespace    Fries91.TornFightClub
-// @version      1.1.8
-// @description  Auto-updating Torn Fight Club organizer. Supports PDA, desktop browser, and mobile browser headers.
+// @version      1.1.9
+// @description  Auto-updating Torn Fight Club organizer. Universal visible header launcher for PDA, desktop, and mobile browser.
 // @author       Fries91
 // @match        https://www.torn.com/*
 // @match        https://*.torn.com/*
@@ -99,6 +99,29 @@
       }
       #tfc-header-btn:hover { transform:scale(1.05)!important; }
       body.tfc-open #tfc-header-btn { z-index:10!important; }
+
+      #tfc-header-dock {
+        position:fixed!important;
+        top:8px!important;
+        right:8px!important;
+        width:28px!important;
+        height:28px!important;
+        display:flex!important;
+        align-items:center!important;
+        justify-content:center!important;
+        background:rgba(12,0,0,.72)!important;
+        border:1px solid rgba(255,70,70,.55)!important;
+        border-radius:8px!important;
+        z-index:99970!important;
+        box-shadow:0 4px 14px rgba(0,0,0,.55)!important;
+        pointer-events:auto!important;
+      }
+      #tfc-header-dock #tfc-header-btn {
+        margin:0!important;
+      }
+      body.tfc-open #tfc-header-dock {
+        z-index:10!important;
+      }
 
       #tfc-overlay {
         position:fixed!important;top:62px!important;left:50%!important;transform:translateX(-50%)!important;width:min(980px,96vw)!important;
@@ -383,6 +406,30 @@
     }
   }
 
+  function getOrCreateHeaderDock() {
+    let dock = id('tfc-header-dock');
+    if (dock) return dock;
+
+    dock = document.createElement('div');
+    dock.id = 'tfc-header-dock';
+    dock.title = 'Torn Fight Club';
+    document.body.appendChild(dock);
+    return dock;
+  }
+
+  function removeDockIfButtonPlaced() {
+    const dock = id('tfc-header-dock');
+    const btn = id('tfc-header-btn');
+    if (dock && btn && !dock.contains(btn)) dock.remove();
+  }
+
+  function placeInEmergencyTopDock(btn) {
+    const dock = getOrCreateHeaderDock();
+    if (!dock.contains(btn)) dock.appendChild(btn);
+    btn.dataset.lockedTo = 'emergency-top-header-dock';
+    return true;
+  }
+
   function mountHeaderButton() {
     injectCss();
     removeBadCopies();
@@ -391,11 +438,17 @@
 
     // 1) Best for your setup: next to faction banking icon.
     const bankSlot = getSlot(findBankLeaf());
-    if (insertAfterSlot(bankSlot, btn, 'faction-bank-header-slot')) return true;
+    if (insertAfterSlot(bankSlot, btn, 'faction-bank-header-slot')) {
+      removeDockIfButtonPlaced();
+      return true;
+    }
 
     // 2) Next to gender icon.
     const genderSlot = getSlot(findGenderLeaf());
-    if (insertAfterSlot(genderSlot, btn, 'gender-header-slot')) return true;
+    if (insertAfterSlot(genderSlot, btn, 'gender-header-slot')) {
+      removeDockIfButtonPlaced();
+      return true;
+    }
 
     // 3) Money/points/status row.
     const row = findBestHeaderRow();
@@ -403,6 +456,7 @@
       try {
         if (!row.contains(btn)) row.appendChild(btn);
         btn.dataset.lockedTo = 'best-status-header-row';
+        removeDockIfButtonPlaced();
         return true;
       } catch (e) {}
     }
@@ -413,11 +467,15 @@
       try {
         if (!mobileRow.contains(btn)) mobileRow.appendChild(btn);
         btn.dataset.lockedTo = 'mobile-browser-icon-row';
+        removeDockIfButtonPlaced();
         return true;
       } catch (e) {}
     }
 
-    return false;
+    // 5) Universal visibility fallback.
+    // This is only used when their Torn layout has no recognizable header/status row.
+    // It stays at the very top by the header, not bottom-floating over gameplay.
+    return placeInEmergencyTopDock(btn);
   }
 
   async function refresh() {
