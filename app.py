@@ -286,8 +286,71 @@ def require_admin(fn):
     return wrapper
 
 
+def parse_battle_stats(data):
+    def num(key):
+        try:
+            return int(float(data.get(key, 0) or 0))
+        except Exception:
+            return 0
+
+    strength = num("strength")
+    defense = num("defense")
+    speed = num("speed")
+    dexterity = num("dexterity")
+
+    total = data.get("total")
+    if total is None:
+        total = strength + defense + speed + dexterity
+    try:
+        total = int(float(total or 0))
+    except Exception:
+        total = strength + defense + speed + dexterity
+
+    if strength == 0 and defense == 0 and speed == 0 and dexterity == 0 and total == 0:
+        return None
+
+    return {
+        "strength": strength,
+        "defense": defense,
+        "speed": speed,
+        "dexterity": dexterity,
+        "total": total,
+    }
+
+
 def torn_basic_from_key(api_key):
+    # Try basic + battlestats first. If the key does not have access to battlestats,
+    # login still falls back to basic identity only.
     url = f"{TORN_API_BASE.rstrip('/')}/user/"
+
+    identity = None
+    private_battle_stats = None
+    stat_error = None
+
+    try:
+        r = requests.get(
+            url,
+            params={"selections": "basic,battlestats", "key": api_key},
+            timeout=REQUEST_TIMEOUT,
+        )
+        data = r.json()
+
+        if "error" in data:
+            err = data["error"]
+            stat_error = err.get("error", "Torn API error") if isinstance(err, dict) else str(err)
+        else:
+            torn_id = int(data.get("player_id") or data.get("id") or 0)
+            name = data.get("name") or f"Player {torn_id}"
+            if torn_id:
+                identity = (torn_id, name)
+                private_battle_stats = parse_battle_stats(data)
+    except Exception as e:
+        stat_error = str(e)
+
+    if identity:
+        return identity[0], identity[1], private_battle_stats, stat_error
+
+    # Fallback: basic only.
     r = requests.get(
         url,
         params={"selections": "basic", "key": api_key},
@@ -302,7 +365,7 @@ def torn_basic_from_key(api_key):
     name = data.get("name") or f"Player {torn_id}"
     if not torn_id:
         raise ValueError("Could not read Torn player id from API response")
-    return torn_id, name
+    return torn_id, name, None, stat_error
 
 
 @app.get("/")
@@ -310,7 +373,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "2.0.0",
+        "version": "2.1.0",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -335,7 +398,7 @@ def login():
         return jsonify({"ok": False, "error": "API key required"}), 400
 
     try:
-        torn_id, name = torn_basic_from_key(api_key)
+        torn_id, name, private_battle_stats, battle_stats_error = torn_basic_from_key(api_key)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Could not verify Torn key: {e}"}), 400
 
@@ -359,7 +422,14 @@ def login():
             (torn_id, name, role, token, int(time.time()), points, created_at),
         )
 
-    return jsonify({"ok": True, "token": token, "user": {"torn_id": torn_id, "name": name, "role": role, "prediction_points": points}})
+    return jsonify({
+        "ok": True,
+        "token": token,
+        "user": {"torn_id": torn_id, "name": name, "role": role, "prediction_points": points},
+        "private_battle_stats": private_battle_stats,
+        "battle_stats_error": battle_stats_error,
+        "battle_stats_note": "Battle stats are returned only to the logged-in user at login and are not included in public state.",
+    })
 
 
 @app.get("/api/me")
