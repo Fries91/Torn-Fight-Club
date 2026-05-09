@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Fight Club - Fries91
 // @namespace    Fries91.TornFightClub
-// @version      1.1.0
+// @version      1.1.1
 // @description  Community Fight Club organizer for Torn: fighters, cards, refs, fun prediction points, rankings, and admin controls.
 // @author       Fries91
 // @match        https://www.torn.com/*
@@ -11,6 +11,7 @@
 // @grant        GM_setValue
 // @connect      torn-fight-club.onrender.com
 // @connect      api.torn.com
+// @run-at       document-end
 // ==/UserScript==
 
 (function () {
@@ -71,78 +72,160 @@
     style.id = 'tfc-style';
     style.textContent = `
       #tfc-btn {
-        display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:6px;
-        border:0;background:transparent;cursor:pointer;font-size:22px;line-height:1;z-index:20;position:relative;vertical-align:middle;
+        display:inline-flex!important;
+        align-items:center!important;
+        justify-content:center!important;
+        width:30px!important;
+        height:30px!important;
+        min-width:30px!important;
+        min-height:30px!important;
+        margin-left:6px!important;
+        border:0!important;
+        background:transparent!important;
+        cursor:pointer!important;
+        font-size:23px!important;
+        line-height:1!important;
+        z-index:50!important;
+        position:relative!important;
+        vertical-align:middle!important;
+        opacity:1!important;
+        visibility:visible!important;
       }
       #tfc-btn:hover { transform:scale(1.08); }
+
+      #tfc-fixed-btn {
+        position:fixed!important;
+        left:10px!important;
+        bottom:72px!important;
+        width:46px!important;
+        height:46px!important;
+        border-radius:50%!important;
+        border:2px solid #ff4545!important;
+        background:#160000!important;
+        color:#fff!important;
+        font-size:26px!important;
+        display:flex!important;
+        align-items:center!important;
+        justify-content:center!important;
+        cursor:pointer!important;
+        z-index:99980!important;
+        box-shadow:0 8px 24px #000!important;
+        opacity:1!important;
+        visibility:visible!important;
+      }
+
+      body.tfc-open #tfc-fixed-btn,
+      body.tfc-open #tfc-btn {
+        z-index:20!important;
+      }
+
       #tfc-overlay {
-        position:fixed;top:62px;left:50%;transform:translateX(-50%);width:min(980px,96vw);max-height:86vh;overflow:auto;
-        background:#090909;color:#f5f5f5;border:2px solid #b40000;border-radius:16px;box-shadow:0 18px 60px #000;
-        z-index:99999;font-family:Arial,Helvetica,sans-serif;
+        position:fixed!important;
+        top:62px!important;
+        left:50%!important;
+        transform:translateX(-50%)!important;
+        width:min(980px,96vw)!important;
+        max-height:86vh!important;
+        overflow:auto!important;
+        background:#090909!important;
+        color:#f5f5f5!important;
+        border:2px solid #b40000!important;
+        border-radius:16px!important;
+        box-shadow:0 18px 60px #000!important;
+        z-index:99999!important;
+        font-family:Arial,Helvetica,sans-serif!important;
       }
       #tfc-head {
-        display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;
-        background:linear-gradient(90deg,#260000,#111);position:sticky;top:0;z-index:2;border-bottom:1px solid #8a0000;
+        display:flex!important;
+        align-items:center!important;
+        justify-content:space-between!important;
+        gap:10px!important;
+        padding:12px 14px!important;
+        background:linear-gradient(90deg,#260000,#111)!important;
+        position:sticky!important;
+        top:0!important;
+        z-index:2!important;
+        border-bottom:1px solid #8a0000!important;
       }
-      #tfc-title { font-size:20px;font-weight:900;letter-spacing:.5px; }
-      #tfc-close { background:#300;color:#fff;border:1px solid #900;border-radius:10px;padding:7px 10px;cursor:pointer; }
-      #tfc-tabs { display:flex;flex-wrap:wrap;gap:6px;padding:10px;background:#111;border-bottom:1px solid #333; }
-      .tfc-tab { border:1px solid #555;background:#181818;color:#fff;border-radius:999px;padding:7px 10px;font-weight:800;cursor:pointer; }
-      .tfc-tab.active { background:#b40000;border-color:#ff4545; }
-      #tfc-body { padding:12px; }
-      .tfc-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:10px; }
-      .tfc-card { background:#141414;border:1px solid #333;border-radius:14px;padding:12px; }
-      .tfc-card h3 { margin:0 0 8px;font-size:17px;color:#ff4b4b; }
-      .tfc-muted { color:#aaa;font-size:12px; }
-      .tfc-btn { border:1px solid #666;background:#222;color:#fff;border-radius:10px;padding:8px 10px;margin:3px;cursor:pointer;font-weight:800; }
-      .tfc-btn.red { background:#8b0000;border-color:#ff3333; }
-      .tfc-btn.green { background:#064b20;border-color:#20c060; }
-      .tfc-btn.gold { background:#5c4000;border-color:#ffc107; }
-      .tfc-input,.tfc-select,.tfc-textarea { width:100%;box-sizing:border-box;background:#080808;color:#fff;border:1px solid #555;border-radius:10px;padding:9px;margin:4px 0; }
-      .tfc-textarea { min-height:90px;resize:vertical; }
-      .tfc-row { display:flex;gap:8px;align-items:center;flex-wrap:wrap; }
-      .tfc-pill { display:inline-block;border:1px solid #555;border-radius:999px;padding:3px 8px;background:#222;margin:2px;font-size:12px; }
-      .tfc-warn { border-color:#ffc107;background:#332500;color:#ffe38a; }
-      .tfc-good { border-color:#23c55e;background:#052e16;color:#a7f3d0; }
-      .tfc-danger { border-color:#ef4444;background:#3b0505;color:#fecaca; }
-      .tfc-vs { font-size:24px;font-weight:900;color:#ff4b4b; }
+      #tfc-title { font-size:20px!important;font-weight:900!important;letter-spacing:.5px!important; }
+      #tfc-close { background:#300!important;color:#fff!important;border:1px solid #900!important;border-radius:10px!important;padding:7px 10px!important;cursor:pointer!important; }
+      #tfc-tabs { display:flex!important;flex-wrap:wrap!important;gap:6px!important;padding:10px!important;background:#111!important;border-bottom:1px solid #333!important; }
+      .tfc-tab { border:1px solid #555!important;background:#181818!important;color:#fff!important;border-radius:999px!important;padding:7px 10px!important;font-weight:800!important;cursor:pointer!important; }
+      .tfc-tab.active { background:#b40000!important;border-color:#ff4545!important; }
+      #tfc-body { padding:12px!important; }
+      .tfc-grid { display:grid!important;grid-template-columns:repeat(auto-fit,minmax(235px,1fr))!important;gap:10px!important; }
+      .tfc-card { background:#141414!important;border:1px solid #333!important;border-radius:14px!important;padding:12px!important; }
+      .tfc-card h3 { margin:0 0 8px!important;font-size:17px!important;color:#ff4b4b!important; }
+      .tfc-muted { color:#aaa!important;font-size:12px!important; }
+      .tfc-btn { border:1px solid #666!important;background:#222!important;color:#fff!important;border-radius:10px!important;padding:8px 10px!important;margin:3px!important;cursor:pointer!important;font-weight:800!important; }
+      .tfc-btn.red { background:#8b0000!important;border-color:#ff3333!important; }
+      .tfc-btn.green { background:#064b20!important;border-color:#20c060!important; }
+      .tfc-btn.gold { background:#5c4000!important;border-color:#ffc107!important; }
+      .tfc-input,.tfc-select,.tfc-textarea { width:100%!important;box-sizing:border-box!important;background:#080808!important;color:#fff!important;border:1px solid #555!important;border-radius:10px!important;padding:9px!important;margin:4px 0!important; }
+      .tfc-textarea { min-height:90px!important;resize:vertical!important; }
+      .tfc-row { display:flex!important;gap:8px!important;align-items:center!important;flex-wrap:wrap!important; }
+      .tfc-pill { display:inline-block!important;border:1px solid #555!important;border-radius:999px!important;padding:3px 8px!important;background:#222!important;margin:2px!important;font-size:12px!important; }
+      .tfc-warn { border-color:#ffc107!important;background:#332500!important;color:#ffe38a!important; }
+      .tfc-good { border-color:#23c55e!important;background:#052e16!important;color:#a7f3d0!important; }
+      .tfc-danger { border-color:#ef4444!important;background:#3b0505!important;color:#fecaca!important; }
+      .tfc-vs { font-size:24px!important;font-weight:900!important;color:#ff4b4b!important; }
       @media(max-width:620px) {
-        #tfc-overlay { top:45px;width:98vw;max-height:88vh; }
-        .tfc-grid { grid-template-columns:1fr; }
-        #tfc-title { font-size:16px; }
-        .tfc-tab { font-size:12px;padding:6px 8px; }
-        .tfc-card { padding:10px; }
+        #tfc-overlay { top:45px!important;width:98vw!important;max-height:88vh!important; }
+        .tfc-grid { grid-template-columns:1fr!important; }
+        #tfc-title { font-size:16px!important; }
+        .tfc-tab { font-size:12px!important;padding:6px 8px!important; }
+        .tfc-card { padding:10px!important; }
       }
     `;
     document.head.appendChild(style);
   }
 
-  function mountButton() {
-    injectCss();
-    if (id('tfc-btn')) return;
-
-    const btn = document.createElement('button');
-    btn.id = 'tfc-btn';
-    btn.textContent = '🥊';
-    btn.title = 'Torn Fight Club';
-    btn.onclick = toggle;
-
+  function findHeaderParent() {
     const selectors = [
       '#barStatus',
       '.status-icons',
       '[class*="status-icons"]',
+      '[class*="userStatus"]',
       '[class*="status"]',
       '#top-page-links-list',
-      '.topHeader___'
+      '[class*="topHeader"]',
+      '[class*="header"]'
     ];
 
-    let parent = null;
     for (const q of selectors) {
-      parent = document.querySelector(q);
-      if (parent) break;
+      const found = document.querySelector(q);
+      if (found && found !== document.body && found.offsetParent !== null) return found;
+    }
+    return null;
+  }
+
+  function mountButtons() {
+    injectCss();
+
+    let headerBtn = id('tfc-btn');
+    if (!headerBtn) {
+      headerBtn = document.createElement('button');
+      headerBtn.id = 'tfc-btn';
+      headerBtn.type = 'button';
+      headerBtn.textContent = '🥊';
+      headerBtn.title = 'Torn Fight Club';
+      headerBtn.addEventListener('click', toggle);
     }
 
-    (parent || document.body).appendChild(btn);
+    const parent = findHeaderParent();
+    if (parent && !parent.contains(headerBtn)) {
+      try { parent.appendChild(headerBtn); } catch (e) {}
+    }
+
+    if (!id('tfc-fixed-btn')) {
+      const fixed = document.createElement('button');
+      fixed.id = 'tfc-fixed-btn';
+      fixed.type = 'button';
+      fixed.textContent = '🥊';
+      fixed.title = 'Torn Fight Club';
+      fixed.addEventListener('click', toggle);
+      document.body.appendChild(fixed);
+    }
   }
 
   async function refresh() {
@@ -159,6 +242,7 @@
     const old = id('tfc-overlay');
     if (old) {
       old.remove();
+      document.body.classList.remove('tfc-open');
       return;
     }
     await openOverlay();
@@ -168,6 +252,9 @@
     injectCss();
     try { await refresh(); }
     catch (e) { APP.state = { ok:false, error:e.message }; }
+
+    const old = id('tfc-overlay');
+    if (old) old.remove();
 
     const box = document.createElement('div');
     box.id = 'tfc-overlay';
@@ -183,7 +270,11 @@
       <div id="tfc-body">Loading...</div>
     `;
     document.body.appendChild(box);
-    id('tfc-close').onclick = () => box.remove();
+    document.body.classList.add('tfc-open');
+    id('tfc-close').onclick = () => {
+      box.remove();
+      document.body.classList.remove('tfc-open');
+    };
     renderTabs();
     render();
   }
@@ -622,12 +713,26 @@
     });
   }
 
-  let tries = 0;
-  const timer = setInterval(() => {
-    mountButton();
-    tries++;
-    if (tries > 25 || id('tfc-btn')) clearInterval(timer);
-  }, 700);
+  function boot() {
+    mountButtons();
+    let ticks = 0;
 
-  mountButton();
+    const interval = setInterval(() => {
+      mountButtons();
+      ticks++;
+      if (ticks > 120) clearInterval(interval);
+    }, 1000);
+
+    const observer = new MutationObserver(() => mountButtons());
+    observer.observe(document.documentElement || document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
 })();
