@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Fight Club - Fries91
 // @namespace    Fries91.TornFightClub
-// @version      1.1.3
-// @description  Auto-updating Torn Fight Club organizer. Header-only launcher, no floating icon.
+// @version      1.1.4
+// @description  Auto-updating Torn Fight Club organizer. Header-only launcher placed next to gender icon.
 // @author       Fries91
 // @match        https://www.torn.com/*
 // @match        https://*.torn.com/*
@@ -73,27 +73,30 @@
         display:inline-flex!important;
         align-items:center!important;
         justify-content:center!important;
-        width:24px!important;
-        height:24px!important;
-        min-width:24px!important;
-        min-height:24px!important;
-        margin-left:4px!important;
-        margin-right:2px!important;
+        width:22px!important;
+        height:22px!important;
+        min-width:22px!important;
+        min-height:22px!important;
+        max-width:22px!important;
+        max-height:22px!important;
+        margin:0 0 0 5px!important;
         padding:0!important;
         border:0!important;
         outline:0!important;
         background:transparent!important;
         box-shadow:none!important;
         cursor:pointer!important;
-        font-size:20px!important;
-        line-height:1!important;
-        z-index:15!important;
+        font-size:19px!important;
+        line-height:22px!important;
+        z-index:12!important;
         position:relative!important;
         vertical-align:middle!important;
         opacity:1!important;
         visibility:visible!important;
+        overflow:visible!important;
+        transform:none!important;
       }
-      #tfc-header-btn:hover { transform:scale(1.08); }
+      #tfc-header-btn:hover { transform:scale(1.06)!important; }
       body.tfc-open #tfc-header-btn { z-index:10!important; }
 
       #tfc-overlay {
@@ -119,66 +122,102 @@
       .tfc-pill{display:inline-block!important;border:1px solid #555!important;border-radius:999px!important;padding:3px 8px!important;background:#222!important;margin:2px!important;font-size:12px!important}
       .tfc-warn{border-color:#ffc107!important;background:#332500!important;color:#ffe38a!important}.tfc-good{border-color:#23c55e!important;background:#052e16!important;color:#a7f3d0!important}
       .tfc-vs{font-size:24px!important;font-weight:900!important;color:#ff4b4b!important}
-      @media(max-width:620px){#tfc-overlay{top:45px!important;width:98vw!important;max-height:88vh!important}.tfc-grid{grid-template-columns:1fr!important}#tfc-title{font-size:16px!important}.tfc-tab{font-size:12px!important;padding:6px 8px!important}.tfc-card{padding:10px!important}}
+      @media(max-width:620px){
+        #tfc-overlay{top:45px!important;width:98vw!important;max-height:88vh!important}
+        .tfc-grid{grid-template-columns:1fr!important}
+        #tfc-title{font-size:16px!important}
+        .tfc-tab{font-size:12px!important;padding:6px 8px!important}
+        .tfc-card{padding:10px!important}
+      }
     `;
     document.head.appendChild(style);
   }
 
-  function removeOldFloating() {
-    const oldFloating = id('tfc-fixed-btn');
-    if (oldFloating) oldFloating.remove();
+  function removeOldButtons() {
+    const fixed = id('tfc-fixed-btn');
+    if (fixed) fixed.remove();
+
+    document.querySelectorAll('#tfc-btn').forEach(x => x.remove());
   }
 
-  function findFactionBankingIconParent() {
-    // Best match: place beside the user's existing faction banking/coin icon if it exists.
-    const candidates = Array.from(document.querySelectorAll('button, a, div, span'))
-      .filter(el => {
-        const txt = (el.textContent || '').trim();
-        const title = (el.getAttribute('title') || '').toLowerCase();
-        const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-        const idc = (el.id || '').toLowerCase();
-        const cls = (el.className || '').toString().toLowerCase();
-
-        return (
-          txt.includes('🪙') ||
-          title.includes('bank') ||
-          aria.includes('bank') ||
-          idc.includes('bank') ||
-          cls.includes('bank')
-        );
-      });
-
-    for (const c of candidates) {
-      const p = c.parentElement;
-      if (p && p !== document.body && p.offsetParent !== null) return { parent: p, after: c };
-    }
-
-    return null;
+  function visible(el) {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.top >= 0 && r.top < window.innerHeight;
   }
 
-  function findHeaderParent() {
-    // Torn/PDA header/status row fallbacks. This keeps it in the top header, never floating.
-    const selectors = [
-      '#barStatus',
-      '.status-icons',
-      '[class*="status-icons"]',
-      '[class*="userStatus"]',
-      '[class*="status"]',
-      '#top-page-links-list',
-      '[class*="topHeader"]',
-      '[class*="header"]'
-    ];
+  function scoreGenderCandidate(el) {
+    const txt = (el.textContent || '').trim();
+    const title = (el.getAttribute('title') || '').toLowerCase();
+    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+    const cls = (el.className || '').toString().toLowerCase();
+    const href = (el.getAttribute('href') || '').toLowerCase();
 
-    for (const q of selectors) {
-      const found = document.querySelector(q);
-      if (found && found !== document.body && found.offsetParent !== null) return found;
+    let score = 0;
+
+    if (txt === '♂' || txt === '♀' || txt === '⚥') score += 100;
+    if (txt.includes('♂') || txt.includes('♀') || txt.includes('⚥')) score += 70;
+    if (title.includes('gender') || aria.includes('gender')) score += 90;
+    if (cls.includes('gender') || href.includes('gender')) score += 80;
+    if (title.includes('male') || title.includes('female') || aria.includes('male') || aria.includes('female')) score += 50;
+    if (cls.includes('male') || cls.includes('female')) score += 35;
+
+    const r = el.getBoundingClientRect();
+    // User status row from screenshot is around the top/middle header, not bottom nav.
+    if (r.top > 320) score -= 80;
+    if (r.top > 350) score -= 120;
+    if (r.width > 50 || r.height > 50) score -= 20;
+
+    return score;
+  }
+
+  function findGenderIcon() {
+    const all = Array.from(document.querySelectorAll('a, button, span, div, i, img, svg, li'));
+    let best = null;
+    let bestScore = 0;
+
+    for (const el of all) {
+      if (!visible(el)) continue;
+      const score = scoreGenderCandidate(el);
+      if (score > bestScore) {
+        best = el;
+        bestScore = score;
+      }
     }
-    return null;
+
+    return bestScore >= 50 ? best : null;
+  }
+
+  function findStatusRowByMoneyPointsGender() {
+    const rows = Array.from(document.querySelectorAll('div, section, nav, header, ul'));
+    let best = null;
+    let bestScore = 0;
+
+    for (const row of rows) {
+      if (!visible(row)) continue;
+      const txt = (row.textContent || '').trim();
+      const r = row.getBoundingClientRect();
+      if (r.top > 330 || r.height > 80 || r.width < 180) continue;
+
+      let score = 0;
+      if (txt.includes('$')) score += 30;
+      if (txt.includes('♂') || txt.includes('♀') || txt.includes('⚥')) score += 50;
+      if (txt.includes('P')) score += 10;
+      if (txt.includes('/')) score += 5;
+      if (r.top > 350) score -= 100;
+
+      if (score > bestScore) {
+        best = row;
+        bestScore = score;
+      }
+    }
+
+    return bestScore >= 35 ? best : null;
   }
 
   function mountHeaderButton() {
     injectCss();
-    removeOldFloating();
+    removeOldButtons();
 
     let btn = id('tfc-header-btn');
     if (!btn) {
@@ -190,24 +229,48 @@
       btn.addEventListener('click', toggle);
     }
 
-    const bankSpot = findFactionBankingIconParent();
-    if (bankSpot && bankSpot.parent) {
+    const gender = findGenderIcon();
+
+    if (gender) {
+      const parent = gender.parentElement;
+
       try {
-        if (bankSpot.after && bankSpot.after.nextSibling !== btn) {
-          bankSpot.parent.insertBefore(btn, bankSpot.after.nextSibling);
-        } else if (!bankSpot.parent.contains(btn)) {
-          bankSpot.parent.appendChild(btn);
+        // If gender itself is a small icon in the row, insert right after it.
+        if (parent && parent !== document.body) {
+          parent.insertBefore(btn, gender.nextSibling);
+          return true;
         }
+      } catch (e) {}
+    }
+
+    const row = findStatusRowByMoneyPointsGender();
+    if (row) {
+      try {
+        row.appendChild(btn);
         return true;
       } catch (e) {}
     }
 
-    const header = findHeaderParent();
-    if (header) {
-      try {
-        if (!header.contains(btn)) header.appendChild(btn);
-        return true;
-      } catch (e) {}
+    // Last header-only fallback, no floating icon.
+    const headerSelectors = [
+      '#barStatus',
+      '.status-icons',
+      '[class*="status-icons"]',
+      '[class*="userStatus"]',
+      '[class*="status"]',
+      '#top-page-links-list',
+      '[class*="topHeader"]',
+      '[class*="header"]'
+    ];
+
+    for (const q of headerSelectors) {
+      const h = document.querySelector(q);
+      if (visible(h)) {
+        try {
+          h.appendChild(btn);
+          return true;
+        } catch (e) {}
+      }
     }
 
     return false;
@@ -230,6 +293,9 @@
     injectCss();
     try { await refresh(); }
     catch (e) { APP.state = { ok:false, error:e.message }; }
+
+    const old = id('tfc-overlay');
+    if (old) old.remove();
 
     const box = document.createElement('div');
     box.id = 'tfc-overlay';
@@ -338,18 +404,19 @@
   }
 
   function boot() {
-    removeOldFloating();
+    removeOldButtons();
     mountHeaderButton();
+
     let ticks = 0;
     const interval = setInterval(() => {
-      removeOldFloating();
+      removeOldButtons();
       mountHeaderButton();
       ticks++;
       if (ticks > 180) clearInterval(interval);
     }, 1000);
 
     const observer = new MutationObserver(() => {
-      removeOldFloating();
+      removeOldButtons();
       mountHeaderButton();
     });
     observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
