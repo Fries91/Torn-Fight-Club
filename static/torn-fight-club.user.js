@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Fight Club - Fries91
 // @namespace    Fries91.TornFightClub
-// @version      1.1.4
-// @description  Auto-updating Torn Fight Club organizer. Header-only launcher placed next to gender icon.
+// @version      1.1.5
+// @description  Auto-updating Torn Fight Club organizer. Header-only launcher inserted as its own slot beside the gender icon.
 // @author       Fries91
 // @match        https://www.torn.com/*
 // @match        https://*.torn.com/*
@@ -73,21 +73,21 @@
         display:inline-flex!important;
         align-items:center!important;
         justify-content:center!important;
-        width:22px!important;
-        height:22px!important;
-        min-width:22px!important;
-        min-height:22px!important;
-        max-width:22px!important;
-        max-height:22px!important;
-        margin:0 0 0 5px!important;
+        width:28px!important;
+        height:28px!important;
+        min-width:28px!important;
+        min-height:28px!important;
+        max-width:28px!important;
+        max-height:28px!important;
+        margin:0 3px!important;
         padding:0!important;
         border:0!important;
         outline:0!important;
         background:transparent!important;
         box-shadow:none!important;
         cursor:pointer!important;
-        font-size:19px!important;
-        line-height:22px!important;
+        font-size:20px!important;
+        line-height:28px!important;
         z-index:12!important;
         position:relative!important;
         vertical-align:middle!important;
@@ -95,6 +95,7 @@
         visibility:visible!important;
         overflow:visible!important;
         transform:none!important;
+        flex:0 0 28px!important;
       }
       #tfc-header-btn:hover { transform:scale(1.06)!important; }
       body.tfc-open #tfc-header-btn { z-index:10!important; }
@@ -146,6 +147,12 @@
     return r.width > 0 && r.height > 0 && r.top >= 0 && r.top < window.innerHeight;
   }
 
+  function isSmallHeaderIcon(el) {
+    if (!visible(el)) return false;
+    const r = el.getBoundingClientRect();
+    return r.top < 330 && r.width > 8 && r.width < 70 && r.height > 8 && r.height < 70;
+  }
+
   function scoreGenderCandidate(el) {
     const txt = (el.textContent || '').trim();
     const title = (el.getAttribute('title') || '').toLowerCase();
@@ -155,18 +162,18 @@
 
     let score = 0;
 
-    if (txt === '♂' || txt === '♀' || txt === '⚥') score += 100;
-    if (txt.includes('♂') || txt.includes('♀') || txt.includes('⚥')) score += 70;
-    if (title.includes('gender') || aria.includes('gender')) score += 90;
-    if (cls.includes('gender') || href.includes('gender')) score += 80;
-    if (title.includes('male') || title.includes('female') || aria.includes('male') || aria.includes('female')) score += 50;
-    if (cls.includes('male') || cls.includes('female')) score += 35;
+    if (txt === '♂' || txt === '♀' || txt === '⚥') score += 120;
+    if (txt.includes('♂') || txt.includes('♀') || txt.includes('⚥')) score += 90;
+    if (title.includes('gender') || aria.includes('gender')) score += 100;
+    if (cls.includes('gender') || href.includes('gender')) score += 90;
+    if (title.includes('male') || title.includes('female') || aria.includes('male') || aria.includes('female')) score += 60;
+    if (cls.includes('male') || cls.includes('female')) score += 45;
 
     const r = el.getBoundingClientRect();
-    // User status row from screenshot is around the top/middle header, not bottom nav.
-    if (r.top > 320) score -= 80;
-    if (r.top > 350) score -= 120;
-    if (r.width > 50 || r.height > 50) score -= 20;
+
+    // The correct row is the money/points/gender row, not bottom PDA tabs.
+    if (r.top > 330) score -= 150;
+    if (r.width > 80 || r.height > 80) score -= 60;
 
     return score;
   }
@@ -177,7 +184,7 @@
     let bestScore = 0;
 
     for (const el of all) {
-      if (!visible(el)) continue;
+      if (!isSmallHeaderIcon(el)) continue;
       const score = scoreGenderCandidate(el);
       if (score > bestScore) {
         best = el;
@@ -185,7 +192,35 @@
       }
     }
 
-    return bestScore >= 50 ? best : null;
+    return bestScore >= 55 ? best : null;
+  }
+
+  function getIconRowItemFromLeaf(leaf) {
+    if (!leaf) return null;
+
+    let child = leaf;
+    let parent = leaf.parentElement;
+
+    // Climb until parent is a real icon row with multiple small visible children.
+    for (let depth = 0; parent && parent !== document.body && depth < 8; depth++) {
+      const parentRect = parent.getBoundingClientRect();
+      const children = Array.from(parent.children).filter(isSmallHeaderIcon);
+
+      const looksLikeIconRow =
+        parentRect.top < 330 &&
+        parentRect.width >= 160 &&
+        parentRect.height <= 58 &&
+        children.length >= 5;
+
+      if (looksLikeIconRow) {
+        return { row: parent, item: child };
+      }
+
+      child = parent;
+      parent = parent.parentElement;
+    }
+
+    return null;
   }
 
   function findStatusRowByMoneyPointsGender() {
@@ -197,14 +232,15 @@
       if (!visible(row)) continue;
       const txt = (row.textContent || '').trim();
       const r = row.getBoundingClientRect();
-      if (r.top > 330 || r.height > 80 || r.width < 180) continue;
+      if (r.top > 330 || r.height > 70 || r.width < 220) continue;
+
+      const children = Array.from(row.children).filter(isSmallHeaderIcon);
 
       let score = 0;
-      if (txt.includes('$')) score += 30;
-      if (txt.includes('♂') || txt.includes('♀') || txt.includes('⚥')) score += 50;
-      if (txt.includes('P')) score += 10;
-      if (txt.includes('/')) score += 5;
-      if (r.top > 350) score -= 100;
+      if (txt.includes('$')) score += 20;
+      if (txt.includes('♂') || txt.includes('♀') || txt.includes('⚥')) score += 60;
+      if (children.length >= 6) score += 40;
+      if (r.height <= 45) score += 20;
 
       if (score > bestScore) {
         best = row;
@@ -212,7 +248,7 @@
       }
     }
 
-    return bestScore >= 35 ? best : null;
+    return bestScore >= 50 ? best : null;
   }
 
   function mountHeaderButton() {
@@ -226,27 +262,31 @@
       btn.type = 'button';
       btn.textContent = '🥊';
       btn.title = 'Torn Fight Club';
+      btn.setAttribute('aria-label', 'Torn Fight Club');
       btn.addEventListener('click', toggle);
     }
 
     const gender = findGenderIcon();
+    const genderSlot = getIconRowItemFromLeaf(gender);
 
-    if (gender) {
-      const parent = gender.parentElement;
-
+    if (genderSlot && genderSlot.row && genderSlot.item) {
       try {
-        // If gender itself is a small icon in the row, insert right after it.
-        if (parent && parent !== document.body) {
-          parent.insertBefore(btn, gender.nextSibling);
-          return true;
+        const row = genderSlot.row;
+        const item = genderSlot.item;
+
+        // Insert as a sibling of the gender slot, not as a child of the gender/donator icon.
+        if (item.nextSibling !== btn) {
+          row.insertBefore(btn, item.nextSibling);
         }
+        return true;
       } catch (e) {}
     }
 
     const row = findStatusRowByMoneyPointsGender();
     if (row) {
       try {
-        row.appendChild(btn);
+        // Better to append to the status icon strip than float over the page.
+        if (!row.contains(btn)) row.appendChild(btn);
         return true;
       } catch (e) {}
     }
@@ -267,7 +307,7 @@
       const h = document.querySelector(q);
       if (visible(h)) {
         try {
-          h.appendChild(btn);
+          if (!h.contains(btn)) h.appendChild(btn);
           return true;
         } catch (e) {}
       }
