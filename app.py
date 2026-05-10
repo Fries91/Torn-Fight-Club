@@ -202,6 +202,50 @@ def init_db():
 
 
 
+
+            CREATE TABLE IF NOT EXISTS match_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_torn_id INTEGER NOT NULL,
+                user_name TEXT,
+                fighter_id INTEGER,
+                total_stats INTEGER NOT NULL DEFAULT 0,
+                stats_type TEXT NOT NULL DEFAULT 'effective',
+                range_amount INTEGER NOT NULL DEFAULT 5000000,
+                status TEXT NOT NULL DEFAULT 'waiting',
+                created_at TEXT NOT NULL,
+                matched_at TEXT,
+                UNIQUE(user_torn_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS matchmaking_matches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                queue_a_id INTEGER NOT NULL,
+                queue_b_id INTEGER NOT NULL,
+                fighter_a_id INTEGER,
+                fighter_b_id INTEGER,
+                user_a_torn_id INTEGER NOT NULL,
+                user_b_torn_id INTEGER NOT NULL,
+                user_a_name TEXT,
+                user_b_name TEXT,
+                stats_a INTEGER NOT NULL DEFAULT 0,
+                stats_b INTEGER NOT NULL DEFAULT 0,
+                stats_diff INTEGER NOT NULL DEFAULT 0,
+                range_amount INTEGER NOT NULL DEFAULT 5000000,
+                status TEXT NOT NULL DEFAULT 'pending_admin',
+                fight_id INTEGER,
+                created_at TEXT NOT NULL,
+                resolved_by INTEGER,
+                resolved_at TEXT,
+                admin_note TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS matchmaking_settings (
+                id INTEGER PRIMARY KEY CHECK (id=1),
+                range_amount INTEGER NOT NULL DEFAULT 5000000,
+                updated_by INTEGER,
+                updated_at TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS reward_slots (
                 slot INTEGER PRIMARY KEY,
                 item_name TEXT NOT NULL DEFAULT '',
@@ -385,6 +429,11 @@ def init_db():
             )
 
 
+        try:
+            con.execute("ALTER TABLE match_queue ADD COLUMN stats_type TEXT NOT NULL DEFAULT 'effective'")
+        except Exception:
+            pass
+        con.execute("INSERT OR IGNORE INTO matchmaking_settings(id, range_amount, updated_at) VALUES(1, 5000000, ?)", (now_iso(),))
         for slot in range(1, 6):
             con.execute("INSERT OR IGNORE INTO reward_slots(slot, item_name, item_amount, points_cost, reward_note, is_active, updated_at) VALUES(?, '', 1, 0, '', 0, ?)", (slot, now_iso()))
         con.execute("INSERT OR IGNORE INTO point_settings(id, item_name, item_amount, points_amount, pay_to_name, pay_to_torn_id, updated_at) VALUES(1, 'Xanax', 1, 100, 'Slimyfleshlite', 1905671, ?)", (now_iso(),))
@@ -557,12 +606,103 @@ def notify_challenge_fighters(con, challenge_id, title, body, notification_type=
     create_user_notification(con, c["challenger_torn_id"], title, body, notification_type, fight_id, challenge_id)
     create_user_notification(con, c["target_torn_id"], title, body, notification_type, fight_id, challenge_id)
 
+
+def get_total_battle_stats_from_user(user):
+    """
+    Matchmaking uses effective battle stats first when available.
+    Falls back to raw total battle stats if effective stats are not stored/read yet.
+    Exact stats remain private.
+    """
+    effective_keys = (
+        "effective_battle_stats",
+        "effective_total_stats",
+        "total_effective_stats",
+        "battle_stats_effective",
+        "battlestats_effective",
+        "effective_stats",
+    )
+    for key in effective_keys:
+        try:
+            val = user.get(key) if hasattr(user, "get") else user[key]
+            if val is not None:
+                return int(val)
+        except Exception:
+            pass
+
+    try:
+        raw = user.get("private_stats_json") if hasattr(user, "get") else user["private_stats_json"]
+        if raw:
+            import json
+            data = json.loads(raw)
+            for key in ("effective_total", "effective_battle_stats", "effective_total_stats", "total_effective_stats", "effective"):
+                if key in data and data[key] is not None:
+                    return int(data[key])
+            possible_sets = [
+                ("strength_effective", "defense_effective", "speed_effective", "dexterity_effective"),
+                ("effective_strength", "effective_defense", "effective_speed", "effective_dexterity"),
+            ]
+            for keys in possible_sets:
+                if all(k in data for k in keys):
+                    return sum(int(data.get(k) or 0) for k in keys)
+    except Exception:
+        pass
+
+    for key in ("total_battle_stats", "battle_stats_total", "total_stats", "battlestats_total"):
+        try:
+            val = user.get(key) if hasattr(user, "get") else user[key]
+            if val is not None:
+                return int(val)
+        except Exception:
+            pass
+
+    try:
+        raw = user.get("private_stats_json") if hasattr(user, "get") else user["private_stats_json"]
+        if raw:
+            import json
+            data = json.loads(raw)
+            for key in ("total", "total_battle_stats", "battle_stats_total"):
+                if key in data and data[key] is not None:
+                    return int(data[key])
+    except Exception:
+        pass
+
+    return 0
+
+
+def try_auto_match_queue(con, user_torn_id):
+    me = con.execute("SELECT * FROM match_queue WHERE user_torn_id=? AND status='waiting'", (user_torn_id,)).fetchone()
+    if not me:
+        return None
+    low = int(me["total_stats"]) - int(me["range_amount"])
+    high = int(me["total_stats"]) + int(me["range_amount"])
+    other = con.execute("""
+        SELECT * FROM match_queue
+        WHERE status='waiting' AND user_torn_id<>? AND total_stats BETWEEN ? AND ?
+        ORDER BY ABS(total_stats - ?) ASC, created_at ASC LIMIT 1
+    """, (user_torn_id, low, high, int(me["total_stats"]))).fetchone()
+    if not other:
+        return None
+    diff = abs(int(me["total_stats"]) - int(other["total_stats"]))
+    cur = con.execute("""
+        INSERT INTO matchmaking_matches(queue_a_id, queue_b_id, fighter_a_id, fighter_b_id,
+            user_a_torn_id, user_b_torn_id, user_a_name, user_b_name,
+            stats_a, stats_b, stats_diff, range_amount, status, created_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (me["id"], other["id"], me["fighter_id"], other["fighter_id"],
+          me["user_torn_id"], other["user_torn_id"], me["user_name"], other["user_name"],
+          me["total_stats"], other["total_stats"], diff, me["range_amount"], "pending_admin", now_iso()))
+    match_id = cur.lastrowid
+    con.execute("UPDATE match_queue SET status='matched', matched_at=? WHERE id IN (?,?)", (now_iso(), me["id"], other["id"]))
+    create_user_notification(con, me["user_torn_id"], "🥊 Match found!", f"A similar-stat opponent was found. Match #{match_id} is waiting for admin approval.", "matchmaking")
+    create_user_notification(con, other["user_torn_id"], "🥊 Match found!", f"A similar-stat opponent was found. Match #{match_id} is waiting for admin approval.", "matchmaking")
+    return match_id
+
 @app.get("/")
 def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.7.0",
+        "version": "4.8.1",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -728,14 +868,22 @@ def state():
         point_settings = dict(point_settings_row) if point_settings_row else {"item_name":"Xanax","item_amount":1,"points_amount":100,"pay_to_name":"Slimyfleshlite","pay_to_torn_id":1905671}
         reward_slots = [dict(x) for x in con.execute("SELECT * FROM reward_slots ORDER BY slot ASC").fetchall()]
         reward_requests = []
+        mm_settings_row = con.execute("SELECT * FROM matchmaking_settings WHERE id=1").fetchone()
+        matchmaking_settings = dict(mm_settings_row) if mm_settings_row else {"range_amount":5000000}
+        match_queue = []
+        matchmaking_matches = []
         point_orders = []
         if token_user:
             if token_user.get("role") == "admin":
                 point_orders = [dict(x) for x in con.execute("SELECT * FROM point_orders ORDER BY id DESC LIMIT 100").fetchall()]
                 reward_requests = [dict(x) for x in con.execute("SELECT * FROM reward_requests ORDER BY id DESC LIMIT 100").fetchall()]
+                match_queue = [dict(x) for x in con.execute("SELECT * FROM match_queue ORDER BY id DESC LIMIT 100").fetchall()]
+                matchmaking_matches = [dict(x) for x in con.execute("SELECT * FROM matchmaking_matches ORDER BY id DESC LIMIT 100").fetchall()]
             else:
                 point_orders = [dict(x) for x in con.execute("SELECT * FROM point_orders WHERE user_torn_id=? ORDER BY id DESC LIMIT 25", (token_user["torn_id"],)).fetchall()]
                 reward_requests = [dict(x) for x in con.execute("SELECT * FROM reward_requests WHERE user_torn_id=? ORDER BY id DESC LIMIT 25", (token_user["torn_id"],)).fetchall()]
+                match_queue = [dict(x) for x in con.execute("SELECT * FROM match_queue WHERE user_torn_id=? ORDER BY id DESC LIMIT 5", (token_user["torn_id"],)).fetchall()]
+                matchmaking_matches = [dict(x) for x in con.execute("""SELECT * FROM matchmaking_matches WHERE user_a_torn_id=? OR user_b_torn_id=? ORDER BY id DESC LIMIT 25""", (token_user["torn_id"], token_user["torn_id"])).fetchall()]
 
     for b in belts:
         b["history"] = safe_json(b.pop("history_json", "[]"), [])
@@ -771,6 +919,9 @@ def state():
         "point_orders": point_orders,
         "reward_slots": reward_slots,
         "reward_requests": reward_requests,
+        "matchmaking_settings": matchmaking_settings,
+        "match_queue": match_queue,
+        "matchmaking_matches": matchmaking_matches,
         "safety_note": "Prediction points only. Do not use this app to handle real Torn money, items, or off-platform gambling.",
     })
 
@@ -2167,6 +2318,120 @@ def resolve_reward_request(request_id):
         audit(con, request.user["torn_id"], "resolve_reward_request", f"reward_request:{request_id}", {"status": status})
 
     return jsonify({"ok": True})
+
+
+@app.post("/api/matchmaking/enter")
+@require_login
+def enter_matchmaking_queue():
+    data = request.get_json(force=True, silent=True) or {}
+    fighter_id = data.get("fighter_id")
+    fighter_id = int(fighter_id) if fighter_id else None
+    with db() as con:
+        settings = con.execute("SELECT * FROM matchmaking_settings WHERE id=1").fetchone()
+        range_amount = int(settings["range_amount"] if settings else 5000000)
+        user = con.execute("SELECT * FROM users WHERE torn_id=?", (request.user["torn_id"],)).fetchone()
+        total_stats = get_total_battle_stats_from_user(user or request.user)
+        if total_stats < 1:
+            return jsonify({"ok": False, "error": "No effective/total battle stats found. Login with a Torn API key that can read your own battle stats first."}), 400
+        if fighter_id:
+            f = con.execute("SELECT * FROM fighters WHERE id=? AND torn_id=? AND active=1", (fighter_id, request.user["torn_id"])).fetchone()
+            if not f:
+                return jsonify({"ok": False, "error": "That fighter profile is not yours"}), 403
+        con.execute("""
+            INSERT INTO match_queue(user_torn_id, user_name, fighter_id, total_stats, stats_type, range_amount, status, created_at)
+            VALUES(?,?,?,?,?,?,?,?)
+            ON CONFLICT(user_torn_id) DO UPDATE SET
+                user_name=excluded.user_name, fighter_id=excluded.fighter_id,
+                total_stats=excluded.total_stats, stats_type=excluded.stats_type, range_amount=excluded.range_amount,
+                status='waiting', created_at=excluded.created_at, matched_at=NULL
+        """, (request.user["torn_id"], request.user.get("name"), fighter_id, total_stats, "effective", range_amount, "waiting", now_iso()))
+        match_id = try_auto_match_queue(con, request.user["torn_id"])
+        audit(con, request.user["torn_id"], "enter_matchmaking_queue", "matchmaking:queue", {"range_amount": range_amount, "match_id": match_id})
+    return jsonify({"ok": True, "match_id": match_id})
+
+
+@app.post("/api/matchmaking/leave")
+@require_login
+def leave_matchmaking_queue():
+    with db() as con:
+        con.execute("UPDATE match_queue SET status='cancelled' WHERE user_torn_id=? AND status='waiting'", (request.user["torn_id"],))
+        audit(con, request.user["torn_id"], "leave_matchmaking_queue", "matchmaking:queue", {})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/matchmaking/settings")
+@require_admin
+def update_matchmaking_settings():
+    data = request.get_json(force=True, silent=True) or {}
+    range_amount = int(data.get("range_amount") or 5000000)
+    if range_amount < 1:
+        return jsonify({"ok": False, "error": "Range must be at least 1"}), 400
+    with db() as con:
+        con.execute("""
+            INSERT INTO matchmaking_settings(id, range_amount, updated_by, updated_at)
+            VALUES(1,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET range_amount=excluded.range_amount, updated_by=excluded.updated_by, updated_at=excluded.updated_at
+        """, (range_amount, request.user["torn_id"], now_iso()))
+        audit(con, request.user["torn_id"], "update_matchmaking_settings", "matchmaking:settings", {"range_amount": range_amount})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/matchmaking/matches/<int:match_id>/status")
+@require_admin
+def update_match_status(match_id):
+    data = request.get_json(force=True, silent=True) or {}
+    status = (data.get("status") or "").strip().lower()
+    admin_note = (data.get("admin_note") or "").strip()[:500]
+    if status not in ("approved", "rejected"):
+        return jsonify({"ok": False, "error": "Status must be approved or rejected"}), 400
+    with db() as con:
+        m = con.execute("SELECT * FROM matchmaking_matches WHERE id=?", (match_id,)).fetchone()
+        if not m:
+            return jsonify({"ok": False, "error": "Match not found"}), 404
+        con.execute("UPDATE matchmaking_matches SET status=?, resolved_by=?, resolved_at=?, admin_note=? WHERE id=?", (status, request.user["torn_id"], now_iso(), admin_note, match_id))
+        title = "🥊 Match approved!" if status == "approved" else "Match rejected"
+        body = "Your similar-stat match was approved by admin." if status == "approved" else (admin_note or "Your similar-stat match was rejected by admin.")
+        create_user_notification(con, m["user_a_torn_id"], title, body, "matchmaking")
+        create_user_notification(con, m["user_b_torn_id"], title, body, "matchmaking")
+        audit(con, request.user["torn_id"], "update_match_status", f"matchmaking:{match_id}", {"status": status})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/matchmaking/matches/<int:match_id>/create-fight")
+@require_admin
+def create_fight_from_match(match_id):
+    data = request.get_json(force=True, silent=True) or {}
+    event_id = int(data.get("event_id") or 1)
+    round_name = (data.get("round_name") or "Matched Fight").strip()[:80]
+    rule_set = (data.get("rule_set") or "Similar stats matchmaking fight").strip()[:240]
+    starts_at = (data.get("starts_at") or "").strip()[:80]
+    spectate_url = (data.get("spectate_url") or "").strip()[:500]
+    with db() as con:
+        m = con.execute("SELECT * FROM matchmaking_matches WHERE id=?", (match_id,)).fetchone()
+        if not m:
+            return jsonify({"ok": False, "error": "Match not found"}), 404
+        if m["fight_id"]:
+            return jsonify({"ok": False, "error": "Fight already created for this match"}), 400
+        fa, fb = m["fighter_a_id"], m["fighter_b_id"]
+        if not fa:
+            row = con.execute("SELECT id FROM fighters WHERE torn_id=? AND active=1 ORDER BY id DESC LIMIT 1", (m["user_a_torn_id"],)).fetchone()
+            fa = row["id"] if row else None
+        if not fb:
+            row = con.execute("SELECT id FROM fighters WHERE torn_id=? AND active=1 ORDER BY id DESC LIMIT 1", (m["user_b_torn_id"],)).fetchone()
+            fb = row["id"] if row else None
+        if not fa:
+            cur = con.execute("INSERT INTO fighters(torn_id, name, nickname, stats_range, loadout, active, created_at) VALUES(?,?,?,?,?,?,?)", (m["user_a_torn_id"], m["user_a_name"], m["user_a_name"], "Private matched stats", "TBA", 1, now_iso()))
+            fa = cur.lastrowid
+        if not fb:
+            cur = con.execute("INSERT INTO fighters(torn_id, name, nickname, stats_range, loadout, active, created_at) VALUES(?,?,?,?,?,?,?)", (m["user_b_torn_id"], m["user_b_name"], m["user_b_name"], "Private matched stats", "TBA", 1, now_iso()))
+            fb = cur.lastrowid
+        cur = con.execute("INSERT INTO fights(event_id, fighter_a_id, fighter_b_id, status, round_name, rule_set, odds_a, odds_b, starts_at, spectate_url, tournament_id, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (event_id, fa, fb, "scheduled", round_name, rule_set, 1.9, 1.9, starts_at, spectate_url, None, now_iso()))
+        fight_id = cur.lastrowid
+        con.execute("UPDATE matchmaking_matches SET status='fight_created', fight_id=?, resolved_by=?, resolved_at=? WHERE id=?", (fight_id, request.user["torn_id"], now_iso(), match_id))
+        create_user_notification(con, m["user_a_torn_id"], "🥊 Match fight created!", f"Your similar-stat match is now Fight #{fight_id}.", "matchmaking", fight_id=fight_id)
+        create_user_notification(con, m["user_b_torn_id"], "🥊 Match fight created!", f"Your similar-stat match is now Fight #{fight_id}.", "matchmaking", fight_id=fight_id)
+        audit(con, request.user["torn_id"], "create_fight_from_match", f"matchmaking:{match_id}", {"fight_id": fight_id})
+    return jsonify({"ok": True, "fight_id": fight_id})
 
 
 if __name__ == "__main__":
