@@ -61,7 +61,7 @@ textarea{min-height:90px}.green{background:#064b20;border-color:#20c060}.red{bac
 </main>
 
 <div id="toast"></div>
-<div class="bottom-quick"><button onclick="setTab('overview')">Home</button><button onclick="setTab('fightcard')">Fights</button><button onclick="setTab('myfighter')">Mine</button><button onclick="setTab('announcements')">Posts</button></div>
+<div class="bottom-quick"><button onclick="setTab('overview')">Home</button><button onclick="setTab('notifications')">🔔</button><button onclick="setTab('fightcard')">Fights</button><button onclick="setTab('myfighter')">Mine</button><button onclick="setTab('announcements')">Posts</button></div>
 <div class="modal" id="spectateModal"><div class="box"><h3>👀 Spectate / Proof Menu</h3><div id="spectateModalBody"></div><button onclick="closeSpectateMenu()">Close</button></div></div>
 
 <script>
@@ -70,7 +70,7 @@ let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
   ok: true, user: null, events: [], fighters: [], fights: [], ideas: [], leaderboard: [],
-  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], challenges: [], alerts: []
+  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], challenges: [], alerts: [], my_notifications: []
 };
 
 const ADMINS = [3679030, 1905671];
@@ -121,16 +121,17 @@ async function refresh(){
 }
 
 function renderTabs(){
-  const tabs = ["overview","fightcard","fighters","myfighter","challenges","picks","leaderboard","tournaments","belts","teams","refs","announcements","ideas","rules","settings"];
+  const tabs = ["overview","notifications","fightcard","fighters","myfighter","challenges","picks","leaderboard","tournaments","belts","teams","refs","announcements","ideas","rules","settings"];
   if(isAdmin()) tabs.push("admin");
-  const labels = {overview:"Overview",fightcard:"Fight Card",fighters:"Fighters",myfighter:"My Fighter",challenges:"Challenges",picks:"Picks",leaderboard:"Ranks",tournaments:"Brackets",belts:"Belts",teams:"Teams",refs:"Refs",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
+  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fighters:"Fighters",myfighter:"My Fighter",challenges:"Challenges",picks:"Picks",leaderboard:"Ranks",tournaments:"Brackets",belts:"Belts",teams:"Teams",refs:"Refs",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
 
 function render(){
+  maybeBrowserNotify();
   $("userStatus").innerHTML = userLine();
   renderTabs();
-  const pages = {overview, fightcard, fighters, myfighter, challenges, picks, leaderboard, tournaments, belts, teams, refs, announcements, ideas, rules, settings, admin};
+  const pages = {overview, notifications, fightcard, fighters, myfighter, challenges, picks, leaderboard, tournaments, belts, teams, refs, announcements, ideas, rules, settings, admin};
   $("app").innerHTML = (pages[TAB] || overview)();
 }
 
@@ -170,6 +171,24 @@ function proofListHtml(fightId, adminControls=false){
       ${adminControls ? `<button class="red" onclick="deleteProof(${p.id})">Delete Proof</button>` : ""}
     </div>
   `).join("");
+}
+
+
+function notifications(){
+  return `
+    <div class="card hero">
+      <h3>🔔 My Notifications</h3>
+      <p class="muted">Challenge approvals and scheduled fights show here. Browser notifications work while this app page is open.</p>
+      ${notificationPill()}
+      <div class="row" style="margin-top:8px">
+        <button class="green" onclick="requestBrowserNotifications()">Enable Browser Popups</button>
+        <button onclick="markAllNotificationsRead()">Mark All Read</button>
+      </div>
+    </div>
+    <div class="grid wide" style="margin-top:10px">
+      <div class="card"><h3>Notification Inbox</h3>${notificationList()}</div>
+    </div>
+  `;
 }
 
 function fightCard(f, pick=false){
@@ -226,7 +245,7 @@ function overview(){
         ${top ? `<b>${esc(top.nickname||top.name)}</b><br><span class="pill">Rank ${top.rank_points}</span><span class="pill">Record ${top.record_w}-${top.record_l}</span>` : `<div class="empty">No fighters yet.</div>`}
       </div>
     </div>
-    <div class="card" style="margin-top:10px"><h3>Latest Alerts</h3>${alertsHtml()}</div>
+    <div class="card" style="margin-top:10px"><h3>My Notifications</h3>${notificationPill()}${notificationList(3)}</div><div class="card" style="margin-top:10px"><h3>Latest Alerts</h3>${alertsHtml()}</div>
     <div class="card" style="margin-top:10px">
       <h3>Next Fight</h3>
       ${next ? fightCard(next,false) : `<div class="empty">No live or scheduled fight yet.</div>`}
@@ -260,6 +279,68 @@ function fighters(){
 }
 
 
+
+
+let LAST_SEEN_NOTIFICATION_ID = Number(localStorage.getItem("tfc_last_seen_notification_id") || 0);
+
+function unreadNotifications(){
+  return (STATE.my_notifications||[]).filter(n=>Number(n.is_read||0)===0);
+}
+
+function newestNotificationId(){
+  const list = STATE.my_notifications || [];
+  return list.length ? Math.max(...list.map(n=>Number(n.id||0))) : 0;
+}
+
+function requestBrowserNotifications(){
+  if(!("Notification" in window)){
+    toast("Browser notifications are not supported here.");
+    return;
+  }
+  Notification.requestPermission().then(p=>{
+    toast(p === "granted" ? "Browser notifications enabled." : "Browser notifications not enabled.");
+  });
+}
+
+function maybeBrowserNotify(){
+  if(!("Notification" in window) || Notification.permission !== "granted") return;
+  const unread = unreadNotifications();
+  if(!unread.length) return;
+  const newest = newestNotificationId();
+  if(newest <= LAST_SEEN_NOTIFICATION_ID) return;
+  const latest = unread[0];
+  try{
+    new Notification(latest.title || "Fight Club notification", {
+      body: latest.body || "",
+      tag: "tfc-" + latest.id
+    });
+  }catch(e){}
+  LAST_SEEN_NOTIFICATION_ID = newest;
+  localStorage.setItem("tfc_last_seen_notification_id", String(newest));
+}
+
+function notificationPill(){
+  const n = unreadNotifications().length;
+  return n ? `<span class="pill live">🔔 ${n} unread</span>` : `<span class="pill good">No unread notifications</span>`;
+}
+
+function notificationList(limit=null){
+  let list = STATE.my_notifications || [];
+  if(limit) list = list.slice(0, limit);
+  if(!STATE.user) return `<div class="empty">Login to see notifications.</div>`;
+  if(!list.length) return `<div class="empty">No notifications yet.</div>`;
+  return list.map(n=>`
+    <div class="mini">
+      <b>${esc(n.title)}</b>
+      <span class="pill ${Number(n.is_read||0)===0 ? "live" : "good"}">${Number(n.is_read||0)===0 ? "unread" : "read"}</span>
+      <span class="pill">${esc(n.notification_type||"info")}</span>
+      <div>${esc(n.body||"")}</div>
+      ${n.related_fight_id ? `<button class="blue" onclick="setTab('fightcard')">Open Fight Card</button>` : ""}
+      <div class="muted">${esc(n.created_at||"")}</div>
+      ${Number(n.is_read||0)===0 ? `<button onclick="markNotificationRead(${n.id})">Mark Read</button>` : ""}
+    </div>
+  `).join("");
+}
 
 function alertsHtml(){
   const alerts = STATE.alerts || [];
@@ -1012,6 +1093,14 @@ function createAlert(){
     body:$("alertBody").value,
     alert_type:$("alertType").value
   },"Alert created.");
+}
+
+
+function markNotificationRead(id){
+  action("/api/notifications/read",{notification_id:id},"Notification marked read.");
+}
+function markAllNotificationsRead(){
+  action("/api/notifications/read",{},"Notifications marked read.");
 }
 
 render();
