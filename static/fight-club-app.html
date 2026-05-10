@@ -107,7 +107,7 @@ let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
   ok: true, user: null, events: [], fighters: [], fights: [], ideas: [], leaderboard: [],
-  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
+  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
 };
 
 const ADMINS = [3679030, 1905671];
@@ -155,7 +155,7 @@ function normalizeState(data){
     ok:true, user:null, events:[], fighters:[], fights:[], ideas:[], leaderboard:[],
     my_predictions:[], my_notifications:[], tournaments:[], tournament_entries:[],
     belts:[], teams:[], referees:[], audit:[], ref_checklists:[], fight_proofs:[],
-    challenges:[], alerts:[]
+    challenges:[], alerts:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[]
   };
   return Object.assign(defaults, data);
 }
@@ -172,9 +172,9 @@ async function refresh(){
 }
 
 function renderTabs(){
-  const tabs = ["overview","notifications","fightcard","fighters","myfighter","challenges","picks","leaderboard","belts","refs","ideas","rules","settings"];
+  const tabs = ["overview","notifications","fightcard","fighters","myfighter","challenges","points","picks","leaderboard","belts","refs","ideas","rules","settings"];
   if(isAdmin()){ tabs.push("announcements"); tabs.push("admin"); }
-  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fighters:"Fighters",myfighter:"My Fighter",challenges:"Challenges",picks:"Picks",leaderboard:"Ranks",belts:"Belts",refs:"Refs",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
+  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fighters:"Fighters",myfighter:"My Fighter",challenges:"Challenges",points:"Points",picks:"Picks",leaderboard:"Ranks",belts:"Belts",refs:"Refs",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
 
@@ -188,7 +188,7 @@ function render(){
   maybeBrowserNotify();
   $("userStatus").innerHTML = userLine();
   renderTabs();
-  const pages = {overview, notifications, fightcard, fighters, myfighter, challenges, picks, leaderboard, belts, refs, ideas, rules, settings, admin};
+  const pages = {overview, notifications, fightcard, fighters, myfighter, challenges, points, picks, leaderboard, belts, refs, ideas, rules, settings, admin};
   if(typeof announcements === "function") pages.announcements = announcements;
   $("app").innerHTML = (pages[TAB] || overview)();
   applyAdminOnlyUi();
@@ -325,7 +325,7 @@ function overview(){
         <div class="row" style="margin-top:8px">
           <button class="green" onclick="setTab('fightcard')">Fight Card</button>
           <button class="blue" onclick="setTab('fighters')">Fighters</button><button class="blue" onclick="setTab('myfighter')">My Fighter</button>
-          <button class="gold" onclick="setTab('picks')">Picks</button><button class="blue admin-only-posts-btn" onclick="setTab('announcements')" style="display:none">Posts</button>
+          <button class="gold" onclick="setTab('picks')">Picks</button><button class="green" onclick="setTab('points')">Get Points</button><button class="blue admin-only-posts-btn" onclick="setTab('announcements')" style="display:none">Posts</button>
           ${isAdmin()?`<button class="red" onclick="setTab('admin')">Admin</button>`:""}
         </div>
       </div>
@@ -699,7 +699,7 @@ function challengeCard(c){
 
 function picks(){
   const open = (STATE.fights||[]).filter(f=>["live","scheduled"].includes(f.status));
-  return `<div class="card hero"><h3>Fun Picks & Silly Side Wagers</h3><span class="pill">Your points: ${STATE.user?STATE.user.prediction_points:"Login needed"}</span><p class="muted">Pick the winner, then throw fun points on dumb fight moments that might happen.</p></div><div class="grid wide" style="margin-top:10px">${open.map(f=>`<div class="card"><h3>${esc(f.fighter_a_nick||f.fighter_a_name||"A")} <span class="vs">VS</span> ${esc(f.fighter_b_nick||f.fighter_b_name||"B")}</h3>${fightCard(f,true)}<h3 style="margin-top:10px">🎲 Silly Side Wagers</h3>${propsForFightHtml(f.id)}</div>`).join("") || `<div class="empty">No open fights.</div>`}</div>`;
+  return `<div class="card hero"><h3>Fun Picks & Silly Side Wagers</h3><span class="pill">Your points: ${STATE.user?STATE.user.prediction_points:"Login needed"}</span>${STATE.user && Number(STATE.user.prediction_points||0)<=0?`<button class="green" onclick="setTab(\'points\')">Get Points</button>`:""}<p class="muted">Pick the winner, then throw fun points on dumb fight moments that might happen.</p></div><div class="grid wide" style="margin-top:10px">${open.map(f=>`<div class="card"><h3>${esc(f.fighter_a_nick||f.fighter_a_name||"A")} <span class="vs">VS</span> ${esc(f.fighter_b_nick||f.fighter_b_name||"B")}</h3>${fightCard(f,true)}<h3 style="margin-top:10px">🎲 Silly Side Wagers</h3>${propsForFightHtml(f.id)}</div>`).join("") || `<div class="empty">No open fights.</div>`}</div>`;
 }
 
 function leaderboard(){
@@ -883,6 +883,79 @@ function ideas(){
 
 function rules(){
   return `<div class="grid wide"><div class="card hero"><h3>Rules</h3><p><b>First rule:</b> You absolutely talk about Fight Club.</p><p class="muted">Keep fights fair, funny, and organized. Follow the selected match rules/loadout for the fight.</p></div><div class="card"><h3>Win Conditions</h3><div>💀 KO</div><div>🩸 Lowest HP</div><div>🎯 Most crits</div></div></div>`;
+}
+
+
+function pointRateText(){
+  const s = STATE.point_settings || {item_name:"Xanax",item_amount:1,points_amount:100,pay_to_name:"Slimyfleshlite",pay_to_torn_id:1905671};
+  return `${s.item_amount} ${s.item_name} = ${s.points_amount} points`;
+}
+
+function pointOrdersHtml(){
+  const orders = STATE.point_orders || [];
+  if(!orders.length) return `<div class="empty">No point requests yet.</div>`;
+  return orders.map(o=>`
+    <div class="mini">
+      <b>${esc(o.user_name||("User "+o.user_torn_id))}</b>
+      <span class="pill ${o.status==="pending"?"warn":o.status==="approved"?"good":"live"}">${esc(o.status)}</span>
+      <div>${esc(o.item_amount)} ${esc(o.item_name)} → ${esc(o.expected_points)} points</div>
+      ${o.proof?`<div class="muted">Proof: ${esc(o.proof)}</div>`:""}
+      ${o.admin_note?`<div class="muted">Admin: ${esc(o.admin_note)}</div>`:""}
+      <div class="muted">${esc(o.created_at||"")}</div>
+      ${isAdmin() && o.status==="pending" ? `<div class="row"><input id="pointNote-${o.id}" placeholder="Admin note optional"><button class="green" onclick="resolvePointOrder(${o.id},'approved')">Approve</button><button class="red" onclick="resolvePointOrder(${o.id},'rejected')">Reject</button></div>`:""}
+    </div>
+  `).join("");
+}
+
+function points(){
+  const s = STATE.point_settings || {item_name:"Xanax",item_amount:1,points_amount:100,pay_to_name:"Slimyfleshlite",pay_to_torn_id:1905671};
+  return `
+    <div class="card hero">
+      <h3>💰 Get Fight Club Points</h3>
+      <p class="muted">Everyone starts with 0 points. To get points, send the required in-game item payment to Slimy, then submit the request here for admin approval.</p>
+      <span class="pill good">${esc(pointRateText())}</span>
+      <span class="pill">Send to ${esc(s.pay_to_name)} [${esc(s.pay_to_torn_id)}]</span>
+      <span class="pill">Your points: ${STATE.user ? esc(STATE.user.prediction_points) : "Login needed"}</span>
+    </div>
+
+    <div class="grid wide" style="margin-top:10px">
+      <div class="card">
+        <h3>Request Points</h3>
+        ${STATE.user ? `
+          <p class="muted">After sending ${esc(s.item_name)} to ${esc(s.pay_to_name)} [${esc(s.pay_to_torn_id)}], enter how many you sent.</p>
+          <input id="pointItemAmount" type="number" min="1" placeholder="How many ${esc(s.item_name)} sent?">
+          <input id="pointProof" placeholder="Optional proof/note, e.g. sent just now">
+          <button class="green" onclick="requestPoints()">Submit Request</button>
+        ` : `<div class="empty">Login first to request points.</div><button class="blue" onclick="setTab('settings')">Go to Settings</button>`}
+      </div>
+
+      <div class="card">
+        <h3>${isAdmin() ? "All Point Requests" : "My Point Requests"}</h3>
+        ${pointOrdersHtml()}
+      </div>
+    </div>
+
+    ${isAdmin()?`
+      <div class="section-title">Admin Point Settings</div>
+      <div class="grid wide">
+        <div class="card">
+          <h3>Set Exchange Rate</h3>
+          <input id="setItemName" value="${esc(s.item_name||"Xanax")}" placeholder="Item name">
+          <input id="setItemAmount" type="number" min="1" value="${esc(s.item_amount||1)}" placeholder="Item amount">
+          <input id="setPointsAmount" type="number" min="1" value="${esc(s.points_amount||100)}" placeholder="Points amount">
+          <input id="setPayToName" value="${esc(s.pay_to_name||"Slimyfleshlite")}" placeholder="Pay to name">
+          <input id="setPayToId" type="number" value="${esc(s.pay_to_torn_id||1905671)}" placeholder="Pay to Torn ID">
+          <button class="gold" onclick="savePointSettings()">Save Rate</button>
+        </div>
+        <div class="card">
+          <h3>Reset Everyone to 0</h3>
+          <p class="muted">Use this once if you want all existing users to start fresh at 0 points.</p>
+          <input id="resetConfirm" placeholder="Type RESET">
+          <button class="red" onclick="resetAllPoints()">Reset All Points</button>
+        </div>
+      </div>
+    `:""}
+  `;
 }
 
 function settings(){
@@ -1204,6 +1277,35 @@ function resolveProp(propId,opt){
 function deleteProp(propId){
   if(!confirm("Delete this side wager and refund open wagers?")) return;
   action("/api/admin/props/"+propId+"/delete",{},"Side wager deleted.");
+}
+
+
+function requestPoints(){
+  action("/api/points/request",{
+    item_amount:$("pointItemAmount").value,
+    proof:$("pointProof").value
+  },"Point request submitted.");
+}
+function savePointSettings(){
+  action("/api/admin/points/settings",{
+    item_name:$("setItemName").value,
+    item_amount:$("setItemAmount").value,
+    points_amount:$("setPointsAmount").value,
+    pay_to_name:$("setPayToName").value,
+    pay_to_torn_id:$("setPayToId").value
+  },"Point rate saved.");
+}
+function resolvePointOrder(id,status){
+  action("/api/admin/points/orders/"+id+"/resolve",{
+    status,
+    admin_note:$("pointNote-"+id) ? $("pointNote-"+id).value : ""
+  },"Point request updated.");
+}
+function resetAllPoints(){
+  if(!confirm("Reset every user's points to 0?")) return;
+  action("/api/admin/points/reset-all",{
+    confirm:$("resetConfirm").value
+  },"All points reset to 0.");
 }
 
 render();
