@@ -65,12 +65,31 @@ textarea{min-height:90px}.green{background:#064b20;border-color:#20c060}.red{bac
 <div class="modal" id="spectateModal"><div class="box"><h3>👀 Spectate / Proof Menu</h3><div id="spectateModalBody"></div><button onclick="closeSpectateMenu()">Close</button></div></div>
 
 <script>
+
+window.addEventListener('error', function(e){
+  try{
+    const appBox = $("app");
+    if(appBox && appBox.textContent.includes("Loading Fight Club")){
+      appBox.innerHTML = `<div class="card hero"><h3>App Script Error</h3><p>${esc(e.message || "Unknown error")}</p><p class="muted">Replace the latest fixed fight-club-app.html and redeploy.</p></div>`;
+    }
+  }catch(x){}
+});
+window.addEventListener('unhandledrejection', function(e){
+  try{
+    const msg = e.reason && (e.reason.message || String(e.reason)) || "Unknown promise error";
+    const appBox = $("app");
+    if(appBox && appBox.textContent.includes("Loading Fight Club")){
+      appBox.innerHTML = `<div class="card hero"><h3>App Loading Error</h3><p>${esc(msg)}</p><p class="muted">Backend or app script failed during load.</p><button onclick="refresh()">Retry</button></div>`;
+    }
+  }catch(x){}
+});
+
 const BASE = "https://torn-fight-club.onrender.com";
 let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
   ok: true, user: null, events: [], fighters: [], fights: [], ideas: [], leaderboard: [],
-  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], challenges: [], alerts: [], my_notifications: []
+  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], challenges: [], alerts: [], my_notifications: [], idea_votes: []
 };
 
 const ADMINS = [3679030, 1905671];
@@ -111,12 +130,26 @@ async function api(path, method="GET", body=null){
   }finally{clearTimeout(timer);}
 }
 
+
+function normalizeState(data){
+  data = data || {};
+  const defaults = {
+    ok:true, user:null, events:[], fighters:[], fights:[], ideas:[], leaderboard:[],
+    my_predictions:[], my_notifications:[], tournaments:[], tournament_entries:[],
+    belts:[], teams:[], referees:[], audit:[], ref_checklists:[], fight_proofs:[],
+    challenges:[], alerts:[]
+  };
+  return Object.assign(defaults, data);
+}
+
 async function refresh(){
   $("userStatus").textContent = "Refreshing...";
-  try{STATE = await api("/api/state"); render();}
-  catch(e){
+  try{
+    STATE = normalizeState(await api("/api/state"));
+    render();
+  }catch(e){
     $("userStatus").textContent = "Offline";
-    $("app").innerHTML = `<div class="card hero"><h3>Connection Error</h3><p>${esc(e.message)}</p><p class="muted">Check Render and /api/state.</p><button onclick="refresh()">Retry</button></div>`;
+    $("app").innerHTML = `<div class="card hero"><h3>Connection Error</h3><p>${esc(e.message || e)}</p><p class="muted">Open /api/state on Render to check backend. If it says server error, replace app.py too.</p><button onclick="refresh()">Retry</button></div>`;
   }
 }
 
@@ -127,12 +160,19 @@ function renderTabs(){
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
 
+function applyAdminOnlyUi(){
+  document.querySelectorAll('.admin-only-posts-btn').forEach(el=>{
+    el.style.display = isAdmin() ? '' : 'none';
+  });
+}
+
 function render(){
   maybeBrowserNotify();
   $("userStatus").innerHTML = userLine();
   renderTabs();
   const pages = {overview, notifications, fightcard, fighters, myfighter, challenges, picks, leaderboard, belts, refs, announcements, ideas, rules, settings, admin};
   $("app").innerHTML = (pages[TAB] || overview)();
+  applyAdminOnlyUi();
 }
 
 
@@ -227,7 +267,7 @@ function overview(){
         <div class="row" style="margin-top:8px">
           <button class="green" onclick="setTab('fightcard')">Fight Card</button>
           <button class="blue" onclick="setTab('fighters')">Fighters</button><button class="blue" onclick="setTab('myfighter')">My Fighter</button>
-          <button class="gold" onclick="setTab('picks')">Picks</button>${isAdmin()?`<button class="blue" onclick="setTab('announcements')">Posts</button>`:""}
+          <button class="gold" onclick="setTab('picks')">Picks</button><button class="blue admin-only-posts-btn" onclick="setTab('announcements')" style="display:none">Posts</button>
           ${isAdmin()?`<button class="red" onclick="setTab('admin')">Admin</button>`:""}
         </div>
       </div>
