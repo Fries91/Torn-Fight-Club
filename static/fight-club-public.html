@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Torn Fight Club Public</title>
+<style>
+body{margin:0;background:#070707;color:#f4f4f4;font-family:Arial,Helvetica,sans-serif}
+header{background:linear-gradient(90deg,#260000,#111);border-bottom:1px solid #8b0000;padding:14px;position:sticky;top:0}
+main{max-width:1100px;margin:auto;padding:12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+.card{background:#141414;border:1px solid #333;border-radius:16px;padding:12px;box-shadow:0 12px 32px #0008}.hero{background:linear-gradient(135deg,#2b0000,#141414);border-color:#a10000}
+h1{margin:0}h3{margin:0 0 8px;color:#ff4b4b}.pill{display:inline-block;border:1px solid #555;background:#222;border-radius:999px;padding:4px 8px;margin:2px;font-size:12px}
+.good{border-color:#22c55e;background:#052e16;color:#bbf7d0}.warn{border-color:#f59e0b;background:#332500;color:#fde68a}.live{border-color:#ef4444;background:#3b0505;color:#fecaca}
+.muted{color:#aaa;font-size:12px}.empty{border:1px dashed #555;border-radius:12px;color:#aaa;text-align:center;padding:14px}.mini{background:#0c0c0c;border:1px solid #2a2a2a;border-radius:10px;padding:8px;margin:6px 0}
+button{border:1px solid #3aa5ff;background:#07365c;color:#fff;border-radius:10px;padding:9px 11px;font-weight:900;cursor:pointer}
+</style></head><body>
+<header><h1>🥊🔥 Torn Fight Club Public Board</h1><div class="muted">Fights, spectate links, champions, tournaments, and recent winners.</div></header>
+<main id="app">Loading...</main>
+<script>
+const BASE="https://torn-fight-club.onrender.com";
+let S={fights:[],fighters:[],belts:[],tournaments:[],tournament_entries:[],fight_proofs:[],alerts:[]};
+const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+function fighterName(id){const f=(S.fighters||[]).find(x=>Number(x.id)===Number(id));return f?(f.nickname||f.name):"Fighter "+id}
+function proofs(fid){return (S.fight_proofs||[]).filter(p=>Number(p.fight_id)===Number(fid))}
+function fightCard(f){const a=f.fighter_a_nick||f.fighter_a_name||"A",b=f.fighter_b_nick||f.fighter_b_name||"B";return `<div class="card"><h3>${esc(a)} vs ${esc(b)}</h3><span class="pill ${f.status==="live"?"live":f.status==="done"?"good":"warn"}">${esc(f.status)}</span><div class="muted">${esc(f.round_name||"Fight")} • ${esc(f.rule_set||"Chaos rules")}</div>${f.starts_at?`<span class="pill">${esc(f.starts_at)}</span>`:""}${f.spectate_url?`<br><button onclick="window.open('${esc(f.spectate_url)}','_blank')">👀 Spectate</button>`:""}${f.winner_fighter_id?`<div><span class="pill good">Winner ${esc(fighterName(f.winner_fighter_id))}</span></div>`:""}${proofs(f.id).map(p=>p.url?`<div class="mini"><b>${esc(p.title||p.proof_type)}</b><br><button onclick="window.open('${esc(p.url)}','_blank')">Open Proof</button></div>`:`<div class="mini">${esc(p.notes||p.title||"Proof")}</div>`).join("")}</div>`}
+function render(){const live=S.fights.filter(f=>f.status==="live"),scheduled=S.fights.filter(f=>f.status==="scheduled"),done=S.fights.filter(f=>f.status==="done").slice(0,6);const champ=[...(S.fighters||[])].sort((a,b)=>(b.rank_points||0)-(a.rank_points||0))[0];document.getElementById("app").innerHTML=`<div class="card hero"><h3>Tonight’s Fight Club</h3><span class="pill live">Live ${live.length}</span><span class="pill warn">Scheduled ${scheduled.length}</span><span class="pill good">Completed ${done.length}</span>${champ?`<span class="pill good">Top Fighter: ${esc(champ.nickname||champ.name)}</span>`:""}</div><h3>Alerts</h3><div class="grid">${(S.alerts||[]).slice(0,4).map(a=>`<div class="card"><h3>${esc(a.title)}</h3><div>${esc(a.body||"")}</div></div>`).join("")||'<div class="empty">No alerts</div>'}</div><h3>Live / Scheduled</h3><div class="grid">${[...live,...scheduled].map(fightCard).join("")||'<div class="empty">No upcoming fights</div>'}</div><h3>Championship Belts</h3><div class="grid">${(S.belts||[]).map(b=>`<div class="card"><h3>👑 ${esc(b.name)}</h3><div>${b.holder_fighter_id?'Holder: '+esc(b.holder_nick||b.holder_name):'Vacant'}</div></div>`).join("")||'<div class="empty">No belts yet</div>'}</div><h3>Recent Winners</h3><div class="grid">${done.map(fightCard).join("")||'<div class="empty">No results yet</div>'}</div>`}
+fetch(BASE+"/api/state").then(r=>r.json()).then(d=>{S=d;render()}).catch(e=>{document.getElementById("app").innerHTML='<div class="card"><h3>Offline</h3><p>'+esc(e.message)+'</p></div>'});
+</script></body></html>
