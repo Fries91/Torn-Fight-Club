@@ -61,7 +61,7 @@ textarea{min-height:90px}.green{background:#064b20;border-color:#20c060}.red{bac
 </main>
 
 <div id="toast"></div>
-<div class="bottom-quick"><button onclick="setTab('overview')">Home</button><button onclick="setTab('notifications')">🔔</button><button onclick="setTab('fightcard')">Fights</button><button onclick="setTab('myfighter')">Mine</button><button onclick="setTab('announcements')">Posts</button></div>
+<div class="bottom-quick"><button onclick="setTab('overview')">Home</button><button onclick="setTab('notifications')">🔔</button><button onclick="setTab('fightcard')">Fights</button><button onclick="setTab('myfighter')">Mine</button></div>
 <div class="modal" id="spectateModal"><div class="box"><h3>👀 Spectate / Proof Menu</h3><div id="spectateModalBody"></div><button onclick="closeSpectateMenu()">Close</button></div></div>
 
 <script>
@@ -121,8 +121,8 @@ async function refresh(){
 }
 
 function renderTabs(){
-  const tabs = ["overview","notifications","fightcard","fighters","myfighter","challenges","picks","leaderboard","belts","refs","announcements","ideas","rules","settings"];
-  if(isAdmin()) tabs.push("admin");
+  const tabs = ["overview","notifications","fightcard","fighters","myfighter","challenges","picks","leaderboard","belts","refs","ideas","rules","settings"];
+  if(isAdmin()){ tabs.push("announcements"); tabs.push("admin"); }
   const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fighters:"Fighters",myfighter:"My Fighter",challenges:"Challenges",picks:"Picks",leaderboard:"Ranks",belts:"Belts",refs:"Refs",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
@@ -227,7 +227,7 @@ function overview(){
         <div class="row" style="margin-top:8px">
           <button class="green" onclick="setTab('fightcard')">Fight Card</button>
           <button class="blue" onclick="setTab('fighters')">Fighters</button><button class="blue" onclick="setTab('myfighter')">My Fighter</button>
-          <button class="gold" onclick="setTab('picks')">Picks</button><button class="blue" onclick="setTab('announcements')">Posts</button>
+          <button class="gold" onclick="setTab('picks')">Picks</button>${isAdmin()?`<button class="blue" onclick="setTab('announcements')">Posts</button>`:""}
           ${isAdmin()?`<button class="red" onclick="setTab('admin')">Admin</button>`:""}
         </div>
       </div>
@@ -524,11 +524,11 @@ function picks(){
 }
 
 function leaderboard(){
-  const fs = [...(STATE.fighters||[])].sort((a,b)=>(b.rank_points||0)-(a.rank_points||0));
-  return `<div class="grid wide"><div class="card"><h3>Prediction Points</h3>${(STATE.leaderboard||[]).map((u,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(u.name)}</b> — ${u.prediction_points} pts</div>`).join("") || `<div class="empty">None yet.</div>`}</div><div class="card"><h3>Fighter Rank</h3>${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${f.rank_points}</div>`).join("") || `<div class="empty">None yet.</div>`}</div></div>`;
+  const fs = [...(STATE.fighters||[])].sort((a,b)=>(b.rank_points||0)-(a.rank_points||0)).slice(0,5);
+  const topUsers = (STATE.leaderboard||[]).slice(0,5);
+  return `<div class="grid wide"><div class="card"><h3>Top 5 Prediction Points</h3>${topUsers.map((u,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(u.name)}</b> — ${u.prediction_points} pts</div>`).join("") || `<div class="empty">None yet.</div>`}</div><div class="card"><h3>Top 5 Fighters</h3>${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${f.rank_points}</div>`).join("") || `<div class="empty">None yet.</div>`}</div></div>`;
 }
 
-function tournamentEntries(tid){return (STATE.tournament_entries||[]).filter(e=>Number(e.tournament_id)===Number(tid));}
 function tournaments(){
   return `
     <div class="card hero"><h3>Brackets</h3><p class="muted">Create tournaments and add fighters into brackets.</p></div>
@@ -828,11 +828,11 @@ function announcements(){
 
 
 function ideas(){
-  return `<div class="card hero"><h3>Ideas</h3>${STATE.user?`<textarea id="idea" placeholder="Drop a cursed fight idea..."></textarea><button class="green" onclick="submitIdea()">Submit</button>`:`<div class="empty">Login to submit.</div>`}</div><div class="grid wide" style="margin-top:10px">${(STATE.ideas||[]).map(i=>`<div class="card"><b>${esc(i.name||"Someone")}</b><p>${esc(i.idea)}</p></div>`).join("") || `<div class="empty">No ideas yet.</div>`}</div>`;
+  return `<div class="card hero"><h3>Ideas</h3>${STATE.user?`<textarea id="idea" placeholder="Drop a cursed fight idea..."></textarea><button class="green" onclick="submitIdea()">Submit</button>`:`<div class="empty">Login to submit.</div>`}</div><div class="grid wide" style="margin-top:10px">${(STATE.ideas||[]).map(i=>`<div class="card"><div class="between"><b>${esc(i.name||"Someone")}</b>${isAdmin()?`<button class="red" onclick="deleteIdea(${i.id})">Remove</button>`:""}</div><p>${esc(i.idea)}</p><div class="row"><button class="green" onclick="voteIdea(${i.id},'yes')">Yes ${Number(i.yes_count||0)}</button><button class="red" onclick="voteIdea(${i.id},'no')">No ${Number(i.no_count||0)}</button></div></div>`).join("") || `<div class="empty">No ideas yet.</div>`}</div>`;
 }
 
 function rules(){
-  return `<div class="grid wide"><div class="card hero"><h3>Rules</h3><p><b>First rule:</b> You absolutely talk about Fight Club.</p><span class="pill good">Prediction points only</span><span class="pill warn">No real Torn cash/items betting</span></div><div class="card"><h3>Win Conditions</h3><div>💀 KO</div><div>🩸 Lowest HP</div><div>🏳️ Surrender</div></div></div>`;
+  return `<div class="grid wide"><div class="card hero"><h3>Rules</h3><p><b>First rule:</b> You absolutely talk about Fight Club.</p><p class="muted">Keep fights fair, funny, and organized. Follow the selected match rules/loadout for the fight.</p></div><div class="card"><h3>Win Conditions</h3><div>💀 KO</div><div>🩸 Lowest HP</div><div>🎯 Most crits</div></div></div>`;
 }
 
 function settings(){
@@ -849,7 +849,7 @@ function admin(){
 
     <div class="section-title">Events</div>
     <div class="admin-grid">
-      <div class="card"><h3>Create Event</h3><input id="evTitle" placeholder="Title"><input id="evTheme" placeholder="Theme"><input id="evStart" placeholder="Start"><button class="green" onclick="createEvent()">Create</button></div>
+      <div class="card"><h3>Create Event / Tournament</h3><select id="createKind"><option value="event">Event</option><option value="tournament">Tournament</option></select><input id="evTitle" placeholder="Title"><input id="evTheme" placeholder="Theme / format / division"><input id="evStart" placeholder="Start time / notes"><select id="tourLinkedEvent">${eventOptions()}</select><button class="green" onclick="createEventOrTournament()">Create</button><div class="muted">Choose Event for normal fight night. Choose Tournament to make a bracket-style event for later.</div></div>
       <div class="card"><h3>Edit / Delete Event</h3><select id="editEvent">${eventEditOptions()}</select><input id="editEventTitle" placeholder="New title"><input id="editEventTheme" placeholder="New theme"><input id="editEventStart" placeholder="New start"><select id="editEventStatus"><option value="">Leave status</option><option value="planned">Planned</option><option value="open">Open</option><option value="live">Live</option><option value="done">Done</option><option value="cancelled">Cancelled</option></select><button class="gold" onclick="updateEvent()">Save Event</button><button class="red" onclick="deleteEvent()">Delete Event</button></div>
     </div>
 
@@ -863,7 +863,7 @@ function admin(){
 
     <div class="section-title">Fighters</div>
     <div class="admin-grid">
-      <div class="card"><h3>Edit / Remove Fighter</h3><select id="editFighter">${fighterOptions("Choose fighter")}</select><input id="editNick" placeholder="Nickname"><input id="editRange" placeholder="Stats range"><input id="editLoadout" placeholder="Loadout"><input id="editRank" type="number" placeholder="Rank points"><input id="editW" type="number" placeholder="Wins"><input id="editL" type="number" placeholder="Losses"><button class="gold" onclick="updateFighter()">Save Fighter</button><button class="red" onclick="deleteFighter()">Remove Fighter</button></div>
+      <div class="card"><h3>Edit / Remove Fighter</h3><select id="editFighter">${fighterOptions("Choose fighter")}</select><input id="editNick" placeholder="Nickname"><input id="editRank" type="number" placeholder="Rank points"><input id="editW" type="number" placeholder="Wins"><input id="editL" type="number" placeholder="Losses"><button class="gold" onclick="updateFighter()">Save Fighter</button><button class="red" onclick="deleteFighter()">Remove Fighter</button></div>
     </div>
 
     <div class="section-title">Belts</div>
@@ -873,7 +873,7 @@ function admin(){
 
     <div class="section-title">Refs</div>
     <div class="admin-grid">
-      <div class="card ref"><h3>Edit / Delete Ref</h3><select id="editRef">${refOptions()}</select><input id="editRefName" placeholder="Ref name"><input id="editRefTorn" placeholder="Torn ID"><select id="editRefStatus"><option value="">Leave status</option><option value="active">Active</option><option value="inactive">Inactive</option></select><input id="editRefNotes" placeholder="Notes"><button class="gold" onclick="updateRef()">Save Ref</button><button class="red" onclick="deleteRef()">Delete Ref</button></div>
+      <div class="card ref"><h3>Edit / Delete Ref</h3><select id="editRef">${refOptions()}</select><input id="editRefName" placeholder="Ref name"><input id="editRefTorn" placeholder="Torn ID"><input id="editRefNotes" placeholder="Notes"><button class="gold" onclick="updateRef()">Save Ref</button><button class="red" onclick="deleteRef()">Delete Ref</button></div>
     </div>
 
     <div class="section-title">Alerts / Notifications</div>
@@ -905,6 +905,19 @@ function registerFighter(){action("/api/fighters/register",{event_id:$("regEvent
 function submitIdea(){action("/api/ideas",{idea:$("idea").value},"Submitted.");}
 function makePick(fight,pick){action("/api/predictions",{fight_id:fight,pick_fighter_id:pick,points:$("pts-"+fight).value},"Pick saved.");}
 function createEvent(){action("/api/admin/events",{title:$("evTitle").value,theme:$("evTheme").value,starts_at:$("evStart").value},"Event created.");}
+function createEventOrTournament(){
+  const kind = $("createKind") ? $("createKind").value : "event";
+  if(kind === "tournament"){
+    action("/api/admin/tournaments",{
+      event_id:$("tourLinkedEvent").value || 1,
+      title:$("evTitle").value,
+      format:$("evTheme").value || "single_elim",
+      notes:$("evStart").value
+    },"Tournament created.");
+  } else {
+    createEvent();
+  }
+}
 function createFight(){action("/api/admin/fights",{event_id:$("fightEvent").value,fighter_a_id:$("fighterA").value,fighter_b_id:$("fighterB").value,round_name:$("roundName").value,rule_set:$("fightRules").value,starts_at:$("startTime").value,odds_a:$("oddsA").value,odds_b:$("oddsB").value,spectate_url:$("spectateUrl")?$("spectateUrl").value:""},"Fight created.");}
 function setFightStatus(){action("/api/admin/fights/"+$("statusFight").value+"/status",{status:$("statusVal").value},"Status saved.");}
 function saveResult(){action("/api/admin/fights/"+$("resFight").value+"/result",{winner_fighter_id:$("resWinner").value,result_method:$("resMethod").value},"Result saved.");}
@@ -1000,8 +1013,6 @@ function updateFighter(){
   if(!id){toast("Choose a fighter.");return;}
   action("/api/admin/fighters/"+id+"/update",{
     nickname:$("editNick").value,
-    stats_range:$("editRange").value,
-    loadout:$("editLoadout").value,
     rank_points:$("editRank").value,
     record_w:$("editW").value,
     record_l:$("editL").value
@@ -1048,7 +1059,6 @@ function updateRef(){
   action("/api/admin/referees/"+id+"/update",{
     name:$("editRefName").value,
     torn_id:$("editRefTorn").value,
-    status:$("editRefStatus").value,
     notes:$("editRefNotes").value
   },"Ref updated.");
 }
@@ -1096,6 +1106,15 @@ function markNotificationRead(id){
 }
 function markAllNotificationsRead(){
   action("/api/notifications/read",{},"Notifications marked read.");
+}
+
+
+function voteIdea(id,vote){
+  action("/api/ideas/"+id+"/vote",{vote},"Vote saved.");
+}
+function deleteIdea(id){
+  if(!confirm("Remove this idea?")) return;
+  action("/api/admin/ideas/"+id+"/delete",{},"Idea removed.");
 }
 
 render();
