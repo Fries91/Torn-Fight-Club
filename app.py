@@ -369,6 +369,24 @@ def init_db():
                 created_at TEXT NOT NULL
             );
 
+
+            CREATE TABLE IF NOT EXISTS fight_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fight_id INTEGER NOT NULL,
+                submitted_by_torn_id INTEGER,
+                submitted_by_name TEXT,
+                winner_fighter_id INTEGER,
+                result_method TEXT,
+                battle_report_url TEXT,
+                screenshot_url TEXT,
+                notes TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                reviewed_by INTEGER,
+                reviewed_at TEXT,
+                admin_note TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS fight_proofs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 fight_id INTEGER NOT NULL,
@@ -697,12 +715,28 @@ def try_auto_match_queue(con, user_torn_id):
     create_user_notification(con, other["user_torn_id"], "🥊 Match found!", f"A similar-stat opponent was found. Match #{match_id} is waiting for admin approval.", "matchmaking")
     return match_id
 
+
+def notify_admins(con, title, body="", notification_type="admin", fight_id=None):
+    admins = con.execute("SELECT torn_id FROM users WHERE role='admin'").fetchall()
+    seen = set()
+    for a in admins:
+        tid = int(a["torn_id"])
+        if tid in seen:
+            continue
+        seen.add(tid)
+        create_user_notification(con, tid, title, body, notification_type, fight_id=fight_id)
+
+    # Hard fallback for known Fight Club admins if they have not logged in/role was not present yet.
+    for tid in (3679030, 1905671):
+        if tid not in seen:
+            create_user_notification(con, tid, title, body, notification_type, fight_id=fight_id)
+
 @app.get("/")
 def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.8.2",
+        "version": "4.9.0",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -843,6 +877,24 @@ def state():
         audit_rows = [dict(x) for x in con.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 50").fetchall()]
         checklists = [dict(x) for x in con.execute("SELECT * FROM ref_checklists").fetchall()]
         proof_rows = [dict(x) for x in con.execute("SELECT * FROM fight_proofs ORDER BY id DESC").fetchall()]
+        fight_logs = []
+        if token_user and token_user.get("role") == "admin":
+            fight_logs = [dict(x) for x in con.execute("""
+                SELECT fl.*, fa.nickname AS winner_nick, fa.name AS winner_name
+                FROM fight_logs fl
+                LEFT JOIN fighters fa ON fa.id=fl.winner_fighter_id
+                ORDER BY fl.id DESC
+                LIMIT 100
+            """).fetchall()]
+        elif token_user:
+            fight_logs = [dict(x) for x in con.execute("""
+                SELECT fl.*, fa.nickname AS winner_nick, fa.name AS winner_name
+                FROM fight_logs fl
+                LEFT JOIN fighters fa ON fa.id=fl.winner_fighter_id
+                WHERE fl.submitted_by_torn_id=?
+                ORDER BY fl.id DESC
+                LIMIT 25
+            """, (token_user["torn_id"],)).fetchall()]
         prop_rows = [dict(x) for x in con.execute("SELECT * FROM fight_props ORDER BY id DESC").fetchall()]
         prop_wager_rows = []
         if token_user:
@@ -911,6 +963,7 @@ def state():
         "audit": audit_rows,
         "ref_checklists": checklists,
         "fight_proofs": proof_rows,
+        "fight_logs": fight_logs,
         "fight_props": prop_rows,
         "my_prop_wagers": prop_wager_rows,
         "challenges": challenges,
@@ -2432,6 +2485,123 @@ def create_fight_from_match(match_id):
         create_user_notification(con, m["user_b_torn_id"], "🥊 Match fight created!", f"Your similar-stat match is now Fight #{fight_id}.", "matchmaking", fight_id=fight_id)
         audit(con, request.user["torn_id"], "create_fight_from_match", f"matchmaking:{match_id}", {"fight_id": fight_id})
     return jsonify({"ok": True, "fight_id": fight_id})
+
+
+@app.post("/api/fights/<int:fight_id>/log")
+@require_login
+def submit_fight_log(fight_id):
+    data = request.get_json(force=True, silent=True) or {}
+    winner_fighter_id = data.get("winner_fighter_id")
+    winner_fighter_id = int(winner_fighter_id) if winner_fighter_id else None
+    result_method = (data.get("result_method") or "").strip()[:80]
+    battle_report_url = (data.get("battle_report_url") or "").strip()[:700]
+    screenshot_url = (data.get("screenshot_url") or "").strip()[:700]
+    notes = (data.get("notes") or "").strip()[:1500]
+
+    if not winner_fighter_id:
+        return jsonify({"ok": False, "error": "Winner is required"}), 400
+    if not result_method:
+        return jsonify({"ok": False, "error": "Result method is required"}), 400
+    if not battle_report_url and not screenshot_url and not notes:
+        return jsonify({"ok": False, "error": "Add a battle report link, screenshot link, or notes"}), 400
+
+    with db() as con:
+        fight = con.execute("SELECT * FROM fights WHERE id=?", (fight_id,)).fetchone()
+        if not fight:
+            return jsonify({"ok": False, "error": "Fight not found"}), 404
+
+        if winner_fighter_id not in (fight["fighter_a_id"], fight["fighter_b_id"]):
+            return jsonify({"ok": False, "error": "Winner must be one of the fighters in this fight"}), 400
+
+        cur = con.execute("""
+            INSERT INTO fight_logs(
+                fight_id, submitted_by_torn_id, submitted_by_name, winner_fighter_id,
+                result_method, battle_report_url, screenshot_url, notes, status, created_at
+            )
+            VALUES(?,?,?,?,?,?,?,?,?,?)
+        """, (
+            fight_id,
+            request.user["torn_id"],
+            request.user.get("name"),
+            winner_fighter_id,
+            result_method,
+            battle_report_url,
+            screenshot_url,
+            notes,
+            "pending",
+            now_iso(),
+        ))
+        log_id = cur.lastrowid
+
+        # Also save proof row so proof menu can show it.
+        proof_title = f"Fight log #{log_id} - {result_method}"
+        con.execute("""
+            INSERT INTO fight_proofs(fight_id, proof_type, title, url, notes, created_by, created_at)
+            VALUES(?,?,?,?,?,?,?)
+        """, (
+            fight_id,
+            "fight_log",
+            proof_title,
+            battle_report_url or screenshot_url,
+            notes,
+            request.user["torn_id"],
+            now_iso(),
+        ))
+
+        notify_admins(
+            con,
+            "🥊 Fight log submitted",
+            f"{request.user.get('name')} submitted a fight log for Fight #{fight_id}.",
+            "fight_log",
+            fight_id=fight_id
+        )
+        audit(con, request.user["torn_id"], "submit_fight_log", f"fight:{fight_id}", {"log_id": log_id})
+
+    return jsonify({"ok": True, "log_id": log_id})
+
+
+@app.post("/api/admin/fight-logs/<int:log_id>/review")
+@require_admin
+def review_fight_log(log_id):
+    data = request.get_json(force=True, silent=True) or {}
+    status = (data.get("status") or "").strip().lower()
+    admin_note = (data.get("admin_note") or "").strip()[:700]
+    update_fight = bool(data.get("update_fight", True))
+
+    if status not in ("approved", "rejected"):
+        return jsonify({"ok": False, "error": "Status must be approved or rejected"}), 400
+
+    with db() as con:
+        log = con.execute("SELECT * FROM fight_logs WHERE id=?", (log_id,)).fetchone()
+        if not log:
+            return jsonify({"ok": False, "error": "Fight log not found"}), 404
+        if log["status"] != "pending":
+            return jsonify({"ok": False, "error": "Fight log already reviewed"}), 400
+
+        con.execute("""
+            UPDATE fight_logs
+            SET status=?, reviewed_by=?, reviewed_at=?, admin_note=?
+            WHERE id=?
+        """, (status, request.user["torn_id"], now_iso(), admin_note, log_id))
+
+        if status == "approved" and update_fight:
+            con.execute("""
+                UPDATE fights
+                SET status='done', winner_fighter_id=?, result_method=?
+                WHERE id=?
+            """, (log["winner_fighter_id"], log["result_method"], log["fight_id"]))
+
+        create_user_notification(
+            con,
+            log["submitted_by_torn_id"],
+            "Fight log reviewed",
+            f"Your Fight #{log['fight_id']} log was {status}." + (f" Admin note: {admin_note}" if admin_note else ""),
+            "fight_log",
+            fight_id=log["fight_id"]
+        )
+        audit(con, request.user["torn_id"], "review_fight_log", f"fight_log:{log_id}", {"status": status, "update_fight": update_fight})
+
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
