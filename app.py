@@ -76,7 +76,7 @@ def init_db():
                 role TEXT NOT NULL DEFAULT 'member',
                 session_token TEXT,
                 session_created INTEGER,
-                prediction_points INTEGER NOT NULL DEFAULT 1000,
+                prediction_points INTEGER NOT NULL DEFAULT 00,
                 created_at TEXT NOT NULL
             );
 
@@ -199,6 +199,33 @@ def init_db():
 
 
 
+
+
+            CREATE TABLE IF NOT EXISTS point_settings (
+                id INTEGER PRIMARY KEY CHECK (id=1),
+                item_name TEXT NOT NULL DEFAULT 'Xanax',
+                item_amount INTEGER NOT NULL DEFAULT 1,
+                points_amount INTEGER NOT NULL DEFAULT 100,
+                pay_to_name TEXT NOT NULL DEFAULT 'Slimyfleshlite',
+                pay_to_torn_id INTEGER NOT NULL DEFAULT 1905671,
+                updated_by INTEGER,
+                updated_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS point_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_torn_id INTEGER NOT NULL,
+                user_name TEXT,
+                item_name TEXT NOT NULL DEFAULT 'Xanax',
+                item_amount INTEGER NOT NULL DEFAULT 0,
+                expected_points INTEGER NOT NULL DEFAULT 0,
+                proof TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                resolved_by INTEGER,
+                resolved_at TEXT,
+                admin_note TEXT
+            );
 
             CREATE TABLE IF NOT EXISTS fight_props (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -503,7 +530,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.5.0",
+        "version": "4.6.0",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -512,6 +539,9 @@ def home():
 
 @app.get("/app")
 def app_page():
+
+        con.execute("INSERT OR IGNORE INTO point_settings(id, item_name, item_amount, points_amount, pay_to_name, pay_to_torn_id, updated_at) VALUES(1, 'Xanax', 1, 100, 'Slimyfleshlite', 1905671, now_iso())")
+
     return app.send_static_file("fight-club-app.html")
 @app.get("/app/public")
 def public_app_page():
@@ -665,6 +695,14 @@ def state():
             ORDER BY c.id DESC
         """).fetchall()]
         alerts = [dict(x) for x in con.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 50").fetchall()]
+        point_settings_row = con.execute("SELECT * FROM point_settings WHERE id=1").fetchone()
+        point_settings = dict(point_settings_row) if point_settings_row else {"item_name":"Xanax","item_amount":1,"points_amount":100,"pay_to_name":"Slimyfleshlite","pay_to_torn_id":1905671}
+        point_orders = []
+        if token_user:
+            if token_user.get("role") == "admin":
+                point_orders = [dict(x) for x in con.execute("SELECT * FROM point_orders ORDER BY id DESC LIMIT 100").fetchall()]
+            else:
+                point_orders = [dict(x) for x in con.execute("SELECT * FROM point_orders WHERE user_torn_id=? ORDER BY id DESC LIMIT 25", (token_user["torn_id"],)).fetchall()]
 
     for b in belts:
         b["history"] = safe_json(b.pop("history_json", "[]"), [])
@@ -696,6 +734,8 @@ def state():
         "my_prop_wagers": prop_wager_rows,
         "challenges": challenges,
         "alerts": alerts,
+        "point_settings": point_settings,
+        "point_orders": point_orders,
         "safety_note": "Prediction points only. Do not use this app to handle real Torn money, items, or off-platform gambling.",
     })
 
@@ -1829,6 +1869,131 @@ def delete_prop(prop_id):
         con.execute("DELETE FROM prop_wagers WHERE prop_id=?", (prop_id,))
         con.execute("DELETE FROM fight_props WHERE id=?", (prop_id,))
         audit(con, request.user["torn_id"], "delete_fight_prop", f"prop:{prop_id}", {})
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/points/settings")
+@require_admin
+def update_point_settings():
+    data = request.get_json(force=True, silent=True) or {}
+    item_name = (data.get("item_name") or "Xanax").strip()[:80]
+    item_amount = int(data.get("item_amount") or 1)
+    points_amount = int(data.get("points_amount") or 100)
+    pay_to_name = (data.get("pay_to_name") or "Slimyfleshlite").strip()[:100]
+    pay_to_torn_id = int(data.get("pay_to_torn_id") or 1905671)
+
+    if item_amount < 1 or points_amount < 1:
+        return jsonify({"ok": False, "error": "Item amount and points amount must be at least 1"}), 400
+
+    with db() as con:
+        con.execute("""
+            INSERT INTO point_settings(id, item_name, item_amount, points_amount, pay_to_name, pay_to_torn_id, updated_by, updated_at)
+            VALUES(1,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+                item_name=excluded.item_name,
+                item_amount=excluded.item_amount,
+                points_amount=excluded.points_amount,
+                pay_to_name=excluded.pay_to_name,
+                pay_to_torn_id=excluded.pay_to_torn_id,
+                updated_by=excluded.updated_by,
+                updated_at=excluded.updated_at
+        """, (item_name, item_amount, points_amount, pay_to_name, pay_to_torn_id, request.user["torn_id"], now_iso()))
+        audit(con, request.user["torn_id"], "update_point_settings", "points:settings", {
+            "item_name": item_name,
+            "item_amount": item_amount,
+            "points_amount": points_amount,
+            "pay_to_torn_id": pay_to_torn_id,
+        })
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/points/request")
+@require_login
+def request_points():
+    data = request.get_json(force=True, silent=True) or {}
+    item_amount = int(data.get("item_amount") or 0)
+    proof = (data.get("proof") or "").strip()[:700]
+
+    if item_amount < 1:
+        return jsonify({"ok": False, "error": "Enter how many items were sent"}), 400
+
+    with db() as con:
+        s = con.execute("SELECT * FROM point_settings WHERE id=1").fetchone()
+        if not s:
+            con.execute("INSERT OR IGNORE INTO point_settings(id, item_name, item_amount, points_amount, pay_to_name, pay_to_torn_id, updated_at) VALUES(1, 'Xanax', 1, 100, 'Slimyfleshlite', 1905671, ?)", (now_iso(),))
+            s = con.execute("SELECT * FROM point_settings WHERE id=1").fetchone()
+
+        expected = (item_amount // int(s["item_amount"])) * int(s["points_amount"])
+        if expected < 1:
+            return jsonify({"ok": False, "error": f"Minimum is {s['item_amount']} {s['item_name']}"}), 400
+
+        cur = con.execute("""
+            INSERT INTO point_orders(user_torn_id, user_name, item_name, item_amount, expected_points, proof, status, created_at)
+            VALUES(?,?,?,?,?,?,?,?)
+        """, (request.user["torn_id"], request.user.get("name"), s["item_name"], item_amount, expected, proof, "pending", now_iso()))
+        order_id = cur.lastrowid
+
+    return jsonify({"ok": True, "order_id": order_id, "expected_points": expected})
+
+
+@app.post("/api/admin/points/orders/<int:order_id>/resolve")
+@require_admin
+def resolve_point_order(order_id):
+    data = request.get_json(force=True, silent=True) or {}
+    status = (data.get("status") or "").strip().lower()
+    admin_note = (data.get("admin_note") or "").strip()[:500]
+
+    if status not in ("approved", "rejected"):
+        return jsonify({"ok": False, "error": "Status must be approved or rejected"}), 400
+
+    with db() as con:
+        order = con.execute("SELECT * FROM point_orders WHERE id=?", (order_id,)).fetchone()
+        if not order:
+            return jsonify({"ok": False, "error": "Order not found"}), 404
+        if order["status"] != "pending":
+            return jsonify({"ok": False, "error": "Order already resolved"}), 400
+
+        if status == "approved":
+            con.execute("UPDATE users SET prediction_points=prediction_points+? WHERE torn_id=?", (int(order["expected_points"] or 0), order["user_torn_id"]))
+            create_user_notification(
+                con,
+                order["user_torn_id"],
+                "✅ Fight Club points approved",
+                f"Your point request was approved. {order['expected_points']} points were added.",
+                "points"
+            )
+        else:
+            create_user_notification(
+                con,
+                order["user_torn_id"],
+                "❌ Fight Club points rejected",
+                admin_note or "Your point request was rejected by admin.",
+                "points"
+            )
+
+        con.execute("""
+            UPDATE point_orders
+            SET status=?, resolved_by=?, resolved_at=?, admin_note=?
+            WHERE id=?
+        """, (status, request.user["torn_id"], now_iso(), admin_note, order_id))
+        audit(con, request.user["torn_id"], "resolve_point_order", f"point_order:{order_id}", {"status": status})
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/points/reset-all")
+@require_admin
+def reset_all_points():
+    data = request.get_json(force=True, silent=True) or {}
+    confirm = (data.get("confirm") or "").strip()
+    if confirm != "RESET":
+        return jsonify({"ok": False, "error": "Type RESET to confirm"}), 400
+
+    with db() as con:
+        con.execute("UPDATE users SET prediction_points=0")
+        audit(con, request.user["torn_id"], "reset_all_points", "points:all", {})
 
     return jsonify({"ok": True})
 
