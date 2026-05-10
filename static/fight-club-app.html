@@ -107,7 +107,7 @@ let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
   ok: true, user: null, events: [], fighters: [], fights: [], ideas: [], leaderboard: [],
-  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
+  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_logs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], fight_logs: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
 };
 
 const ADMINS = [3679030, 1905671];
@@ -154,8 +154,8 @@ function normalizeState(data){
   const defaults = {
     ok:true, user:null, events:[], fighters:[], fights:[], ideas:[], leaderboard:[],
     my_predictions:[], my_notifications:[], tournaments:[], tournament_entries:[],
-    belts:[], teams:[], referees:[], audit:[], ref_checklists:[], fight_proofs:[],
-    challenges:[], alerts:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[]
+    belts:[], teams:[], referees:[], audit:[], ref_checklists:[], fight_proofs:[], fight_logs:[],
+    challenges:[], alerts:[], fight_logs:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[]
   };
   return Object.assign(defaults, data);
 }
@@ -172,9 +172,9 @@ async function refresh(){
 }
 
 function renderTabs(){
-  const tabs = ["overview","notifications","fightcard","fighters","myfighter","matchmaking","challenges","points","exchange","picks","leaderboard","belts","refs","ideas","rules","settings"];
+  const tabs = ["overview","notifications","fightcard","fightLogs","fighters","myfighter","matchmaking","challenges","points","exchange","picks","leaderboard","belts","ideas","rules","settings"];
   if(isAdmin()){ tabs.push("announcements"); tabs.push("admin"); }
-  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fighters:"Fighters",myfighter:"My Fighter",matchmaking:"Matchmaking",challenges:"Challenges",points:"Points",exchange:"Exchange",picks:"Picks",leaderboard:"Ranks",belts:"Belts",refs:"Refs",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
+  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fightLogs:"Fight Logs",fighters:"Fighters",myfighter:"My Fighter",matchmaking:"Matchmaking",challenges:"Challenges",points:"Points",exchange:"Exchange",picks:"Picks",leaderboard:"Ranks",belts:"Belts",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
 
@@ -188,7 +188,7 @@ function render(){
   maybeBrowserNotify();
   $("userStatus").innerHTML = userLine();
   renderTabs();
-  const pages = {overview, notifications, fightcard, fighters, myfighter, matchmaking, challenges, points, exchange, picks, leaderboard, belts, refs, ideas, rules, settings, admin};
+  const pages = {overview, notifications, fightcard, fightLogs, fighters, myfighter, matchmaking, challenges, points, exchange, picks, leaderboard, belts, ideas, rules, settings, admin};
   if(typeof announcements === "function") pages.announcements = announcements;
   $("app").innerHTML = (pages[TAB] || overview)();
   applyAdminOnlyUi();
@@ -399,13 +399,82 @@ function ufcFightCard(f, index=0){
           <span class="pill">Proofs ${proofs}</span>
           <span class="pill">Ref ${checkDone}/5</span>
           ${f.spectate_url || proofs ? `<button class="blue" onclick="openSpectateMenu(${f.id})">👀 Watch / Proof</button>` : ""}
-          <button class="gold" onclick="setTab('picks')">Pick / Wager</button>
+          <button class="gold" onclick="setTab('picks')">Pick / Wager</button><button class="green" onclick="setTab('fightLogs')">Submit Log</button>
         </div>
 
         ${f.winner_fighter_id ? `<div class="ufc-winner">👑 Winner: ${esc(fighterName(f.winner_fighter_id))} ${f.result_method ? "• " + esc(f.result_method) : ""}</div>` : ""}
       </div>
     </div>
   `;
+}
+
+
+function fightLogForm(f){
+  if(!STATE.user) return `<div class="empty">Login to submit a fight log.</div>`;
+  return `<div class="mini">
+    <h3>Submit Fight Log</h3>
+    <select id="logWinner-${f.id}">
+      <option value="${f.fighter_a_id}">${esc(f.fighter_a_nick||f.fighter_a_name||"Fighter A")}</option>
+      <option value="${f.fighter_b_id}">${esc(f.fighter_b_nick||f.fighter_b_name||"Fighter B")}</option>
+    </select>
+    <select id="logMethod-${f.id}">
+      <option value="KO">KO</option>
+      <option value="Lowest HP">Lowest HP</option>
+      <option value="Most crits">Most crits</option>
+      <option value="Admin decision">Admin decision</option>
+      <option value="Other">Other</option>
+    </select>
+    <input id="logBattle-${f.id}" placeholder="Battle report link optional">
+    <input id="logShot-${f.id}" placeholder="Screenshot/proof link optional">
+    <textarea id="logNotes-${f.id}" placeholder="Notes: what happened, proof, funny details, dispute info"></textarea>
+    <button class="green" onclick="submitFightLog(${f.id})">Submit Fight Log</button>
+  </div>`;
+}
+function fightLogsList(){
+  const logs = STATE.fight_logs || [];
+  if(!logs.length) return `<div class="empty">No fight logs yet.</div>`;
+  return logs.map(l=>`
+    <div class="card">
+      <h3>Fight #${esc(l.fight_id)} Log #${esc(l.id)}</h3>
+      <span class="pill ${l.status==="pending"?"warn":l.status==="approved"?"good":"live"}">${esc(l.status)}</span>
+      <span class="pill">${esc(l.result_method||"Result")}</span>
+      <div><b>Winner:</b> ${esc(l.winner_nick||l.winner_name||fighterName(l.winner_fighter_id)||"Winner")}</div>
+      <div class="muted">Submitted by ${esc(l.submitted_by_name||l.submitted_by_torn_id)} • ${esc(l.created_at||"")}</div>
+      ${l.battle_report_url?`<button class="blue" onclick="window.open('${esc(l.battle_report_url)}','_blank','noopener,noreferrer')">Open Battle Report</button>`:""}
+      ${l.screenshot_url?`<button class="blue" onclick="window.open('${esc(l.screenshot_url)}','_blank','noopener,noreferrer')">Open Screenshot</button>`:""}
+      ${l.notes?`<div class="mini">${esc(l.notes)}</div>`:""}
+      ${l.admin_note?`<div class="muted">Admin note: ${esc(l.admin_note)}</div>`:""}
+      ${isAdmin() && l.status==="pending"?`
+        <div class="mini">
+          <h3>Admin Review</h3>
+          <input id="fightLogNote-${l.id}" placeholder="Admin note optional">
+          <label class="mini"><input id="fightLogUpdate-${l.id}" type="checkbox" checked style="width:auto;margin-right:6px">Approve should mark fight done and save winner/result</label>
+          <button class="green" onclick="reviewFightLog(${l.id},'approved')">Approve Log</button>
+          <button class="red" onclick="reviewFightLog(${l.id},'rejected')">Reject Log</button>
+        </div>
+      `:""}
+    </div>
+  `).join("");
+}
+function fightLogs(){
+  const openFights = (STATE.fights||[]).filter(f=>f.status!=="cancelled");
+  return `<div class="card hero"><h3>🥊 Fight Logs</h3><p class="muted">Submit battle report/proof when a fight is done. Admin reviews it and can mark the fight complete.</p></div>
+  <div class="grid wide" style="margin-top:10px">
+    <div class="card">
+      <h3>Submit Log</h3>
+      <select id="fightLogFight" onchange="renderFightLogSelected()">${openFights.map(f=>`<option value="${f.id}">${esc(f.fighter_a_nick||f.fighter_a_name||"A")} vs ${esc(f.fighter_b_nick||f.fighter_b_name||"B")} — ${esc(f.status)}</option>`).join("")}</select>
+      <div id="fightLogSelected">${openFights[0]?fightLogForm(openFights[0]):`<div class="empty">No fights available.</div>`}</div>
+    </div>
+    <div class="card">
+      <h3>${isAdmin()?"All Submitted Logs":"My Submitted Logs"}</h3>
+      ${fightLogsList()}
+    </div>
+  </div>`;
+}
+function renderFightLogSelected(){
+  const id = Number($("fightLogFight").value);
+  const f = (STATE.fights||[]).find(x=>Number(x.id)===id);
+  $("fightLogSelected").innerHTML = f ? fightLogForm(f) : `<div class="empty">Fight not found.</div>`;
 }
 
 function fightcard(){
@@ -771,48 +840,6 @@ function teams(){
   `;
 }
 
-function refs(){
-  const myRef = STATE.user ? (STATE.referees||[]).find(r=>Number(r.torn_id||0)===Number(STATE.user.torn_id)) : null;
-  return `
-    <div class="card hero">
-      <h3>⚖️ Ref Sign Up</h3>
-      <p class="muted">Want to help run Fight Club nights? Sign up here to become a ref.</p>
-      <span class="pill">Confirm rules</span>
-      <span class="pill">Confirm winners</span>
-      <span class="pill">Help keep fights fair</span>
-    </div>
-
-    <div class="grid wide" style="margin-top:10px">
-      <div class="card ref">
-        <h3>Register as Ref</h3>
-        ${STATE.user ? `
-          ${myRef ? `<div class="pill good">You are signed up as a ref: ${esc(myRef.status||"pending")}</div>` : `<div class="pill warn">You are not signed up yet.</div>`}
-          <select id="refSignupEvent">${eventOptions()}</select>
-          <input id="refSignupName" placeholder="Ref name" value="${esc(STATE.user.name||"")}">
-          <textarea id="refSignupNotes" placeholder="Notes, availability, fight types you can ref">${esc(myRef ? (myRef.notes||"") : "")}</textarea>
-          <button class="green" onclick="registerRef()">Sign Up / Update</button>
-        ` : `
-          <div class="empty">Login first to sign up as a ref.</div>
-          <button class="blue" onclick="setTab('settings')">Go to Settings</button>
-        `}
-      </div>
-
-      <div class="card ref">
-        <h3>What Refs Do</h3>
-        <div class="mini">Make sure both fighters understand the fight rules.</div>
-        <div class="mini">Watch the result and help confirm the winner.</div>
-        <div class="mini">Help admin keep events organized and fair.</div>
-        <div class="mini">Add notes if something weird happens.</div>
-      </div>
-    </div>
-
-    <div class="section-title">Registered Refs</div>
-    <div class="grid wide">
-      ${(STATE.referees||[]).map(r=>`<div class="card ref"><h3>⚖️ ${esc(r.name)}</h3><div class="muted">Torn ID ${esc(r.torn_id||"unset")} • ${esc(r.status||"pending")}</div><div>${esc(r.notes||"")}</div></div>`).join("") || `<div class="empty">No refs signed up yet.</div>`}
-    </div>
-  `;
-}
-
 
 function announcements(){
   if(!isAdmin()){
@@ -1167,13 +1194,7 @@ function admin(){
     <div class="admin-grid">
       <div class="card belt"><h3>Edit / Delete Belt</h3><select id="editBelt">${beltOptions()}</select><input id="editBeltName" placeholder="Belt name"><input id="editBeltDivision" placeholder="Division"><select id="editBeltHolder">${fighterOptions("Holder / vacant")}</select><select id="editBeltStatus"><option value="">Leave status</option><option value="active">Active</option><option value="retired">Retired</option><option value="vacant">Vacant</option></select><button class="gold" onclick="updateBelt()">Save Belt</button><button class="red" onclick="deleteBelt()">Delete Belt</button></div>
     </div>
-
-    <div class="section-title">Refs</div>
-    <div class="admin-grid">
-      <div class="card ref"><h3>Edit / Delete Ref</h3><select id="editRef">${refOptions()}</select><input id="editRefName" placeholder="Ref name"><input id="editRefTorn" placeholder="Torn ID"><input id="editRefNotes" placeholder="Notes"><button class="gold" onclick="updateRef()">Save Ref</button><button class="red" onclick="deleteRef()">Delete Ref</button></div>
-    </div>
-
-    <div class="section-title">Alerts / Notifications</div>
+<div class="section-title">Admin Fight Logs</div><div class="admin-grid"><div class="card"><h3>Pending / Recent Fight Logs</h3>${fightLogsList()}</div></div><div class="section-title">Alerts / Notifications</div>
     <div class="admin-grid">
       <div class="card"><h3>Create Alert</h3><input id="alertTitle" placeholder="Alert title"><input id="alertBody" placeholder="Alert body"><select id="alertType"><option value="info">Info</option><option value="fight">Fight</option><option value="tournament">Tournament</option><option value="result">Result</option></select><button class="green" onclick="createAlert()">Create Alert</button></div>
     </div>
@@ -1520,6 +1541,24 @@ function leaveMatchmaking(){action("/api/matchmaking/leave",{},"Left matchmaking
 function saveMatchmakingSettings(){action("/api/admin/matchmaking/settings",{range_amount:$("mmRange").value},"Match range saved.");}
 function setMatchStatus(id,status){action("/api/admin/matchmaking/matches/"+id+"/status",{status,admin_note:$("mmNote-"+id)?$("mmNote-"+id).value:""},"Match updated.");}
 function createFightFromMatch(id){action("/api/admin/matchmaking/matches/"+id+"/create-fight",{event_id:$("mmEvent-"+id).value,round_name:$("mmRound-"+id).value,rule_set:$("mmRules-"+id).value,starts_at:$("mmStart-"+id).value,spectate_url:$("mmSpectate-"+id).value},"Fight created from match.");}
+
+
+function submitFightLog(fightId){
+  action("/api/fights/"+fightId+"/log",{
+    winner_fighter_id:$("logWinner-"+fightId).value,
+    result_method:$("logMethod-"+fightId).value,
+    battle_report_url:$("logBattle-"+fightId).value,
+    screenshot_url:$("logShot-"+fightId).value,
+    notes:$("logNotes-"+fightId).value
+  },"Fight log submitted for admin review.");
+}
+function reviewFightLog(logId,status){
+  action("/api/admin/fight-logs/"+logId+"/review",{
+    status,
+    admin_note:$("fightLogNote-"+logId) ? $("fightLogNote-"+logId).value : "",
+    update_fight:$("fightLogUpdate-"+logId) ? $("fightLogUpdate-"+logId).checked : true
+  },"Fight log reviewed.");
+}
 
 render();
 refresh();
