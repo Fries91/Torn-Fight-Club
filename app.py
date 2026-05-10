@@ -118,6 +118,8 @@ def init_db():
                 winner_fighter_id INTEGER,
                 result_method TEXT,
                 starts_at TEXT,
+                spectate_url TEXT,
+                tournament_id INTEGER,
                 created_at TEXT NOT NULL
             );
 
@@ -192,6 +194,53 @@ def init_db():
                 created_at TEXT NOT NULL
             );
 
+
+
+
+            CREATE TABLE IF NOT EXISTS challenges (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                challenger_fighter_id INTEGER NOT NULL,
+                target_fighter_id INTEGER NOT NULL,
+                challenger_torn_id INTEGER,
+                note TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                resolved_by INTEGER,
+                resolved_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                body TEXT,
+                alert_type TEXT NOT NULL DEFAULT 'info',
+                created_by INTEGER,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS fight_proofs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fight_id INTEGER NOT NULL,
+                proof_type TEXT NOT NULL DEFAULT 'note',
+                title TEXT,
+                url TEXT,
+                notes TEXT,
+                created_by INTEGER,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS ref_checklists (
+                fight_id INTEGER PRIMARY KEY,
+                both_showed INTEGER NOT NULL DEFAULT 0,
+                rules_confirmed INTEGER NOT NULL DEFAULT 0,
+                fight_started INTEGER NOT NULL DEFAULT 0,
+                winner_confirmed INTEGER NOT NULL DEFAULT 0,
+                method_confirmed INTEGER NOT NULL DEFAULT 0,
+                notes TEXT,
+                updated_by INTEGER,
+                updated_at TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS audit_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 admin_torn_id INTEGER,
@@ -208,6 +257,8 @@ def init_db():
         add_column_if_missing(con, "events", "created_at", "TEXT DEFAULT ''")
         add_column_if_missing(con, "fighters", "active", "INTEGER NOT NULL DEFAULT 1")
         add_column_if_missing(con, "fights", "starts_at", "TEXT")
+        add_column_if_missing(con, "fights", "spectate_url", "TEXT")
+        add_column_if_missing(con, "fights", "tournament_id", "INTEGER")
         add_column_if_missing(con, "fights", "created_at", "TEXT DEFAULT ''")
 
         con.execute("UPDATE users SET role='member' WHERE torn_id NOT IN (?, ?)", tuple(ADMIN_IDS))
@@ -373,7 +424,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "3.0.0",
+        "version": "4.0.0",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -383,6 +434,10 @@ def home():
 @app.get("/app")
 def app_page():
     return app.send_static_file("fight-club-app.html")
+@app.get("/app/public")
+def public_app_page():
+    return app.send_static_file("fight-club-public.html")
+
 
 @app.get("/health")
 def health():
@@ -500,6 +555,20 @@ def state():
         teams = [dict(x) for x in con.execute("SELECT * FROM teams ORDER BY id DESC").fetchall()]
         referees = [dict(x) for x in con.execute("SELECT * FROM referees ORDER BY id DESC").fetchall()]
         audit_rows = [dict(x) for x in con.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 50").fetchall()]
+        checklists = [dict(x) for x in con.execute("SELECT * FROM ref_checklists").fetchall()]
+        proof_rows = [dict(x) for x in con.execute("SELECT * FROM fight_proofs ORDER BY id DESC").fetchall()]
+        challenges = [dict(x) for x in con.execute("""
+            SELECT c.*,
+                   cf.name AS challenger_name,
+                   cf.nickname AS challenger_nick,
+                   tf.name AS target_name,
+                   tf.nickname AS target_nick
+            FROM challenges c
+            JOIN fighters cf ON cf.id=c.challenger_fighter_id
+            JOIN fighters tf ON tf.id=c.target_fighter_id
+            ORDER BY c.id DESC
+        """).fetchall()]
+        alerts = [dict(x) for x in con.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 50").fetchall()]
 
     for b in belts:
         b["history"] = safe_json(b.pop("history_json", "[]"), [])
@@ -524,6 +593,10 @@ def state():
         "teams": teams,
         "referees": referees,
         "audit": audit_rows,
+        "ref_checklists": checklists,
+        "fight_proofs": proof_rows,
+        "challenges": challenges,
+        "alerts": alerts,
         "safety_note": "Prediction points only. Do not use this app to handle real Torn money, items, or off-platform gambling.",
     })
 
@@ -653,6 +726,9 @@ def admin_fight():
     rule_set = (data.get("rule_set") or "Nearly naked chaos loadouts only").strip()[:240]
     round_name = (data.get("round_name") or "Fight Card").strip()[:80]
     starts_at = (data.get("starts_at") or "").strip()[:80]
+    spectate_url = (data.get("spectate_url") or "").strip()[:500]
+    tournament_id = data.get("tournament_id")
+    tournament_id = int(tournament_id) if tournament_id else None
     odds_a = float(data.get("odds_a") or 1.9)
     odds_b = float(data.get("odds_b") or 1.9)
 
@@ -660,7 +736,7 @@ def admin_fight():
         for fid in (fighter_a_id, fighter_b_id):
             if not con.execute("SELECT id FROM fighters WHERE id=?", (fid,)).fetchone():
                 return jsonify({"ok": False, "error": f"Fighter {fid} not found"}), 400
-        cur = con.execute("INSERT INTO fights(event_id, fighter_a_id, fighter_b_id, status, round_name, rule_set, odds_a, odds_b, starts_at, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", (event_id, fighter_a_id, fighter_b_id, "scheduled", round_name, rule_set, odds_a, odds_b, starts_at, now_iso()))
+        cur = con.execute("INSERT INTO fights(event_id, fighter_a_id, fighter_b_id, status, round_name, rule_set, odds_a, odds_b, starts_at, spectate_url, tournament_id, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (event_id, fighter_a_id, fighter_b_id, "scheduled", round_name, rule_set, odds_a, odds_b, starts_at, spectate_url, tournament_id, now_iso()))
         fight_id = cur.lastrowid
         audit(con, request.user["torn_id"], "create_fight", f"fight:{fight_id}", data)
     return jsonify({"ok": True, "fight_id": fight_id})
@@ -682,6 +758,8 @@ def admin_update_fight(fight_id):
         "winner_fighter_id": "INTEGER",
         "result_method": "TEXT",
         "starts_at": "TEXT",
+        "spectate_url": "TEXT",
+        "tournament_id": "INTEGER",
     }
     fields, vals = [], []
     for key in allowed:
@@ -893,6 +971,512 @@ def create_referee():
         ref_id = cur.lastrowid
         audit(con, request.user["torn_id"], "create_referee", f"referee:{ref_id}", data)
     return jsonify({"ok": True, "referee_id": ref_id})
+
+
+@app.post("/api/admin/tournaments/<int:tournament_id>/generate")
+@require_admin
+def generate_tournament_round(tournament_id):
+    data = request.get_json(force=True, silent=True) or {}
+    round_name = (data.get("round_name") or "Round 1").strip()[:80]
+    rule_set = (data.get("rule_set") or "Tournament chaos rules").strip()[:240]
+    starts_at = (data.get("starts_at") or "").strip()[:80]
+    spectate_url = (data.get("spectate_url") or "").strip()[:500]
+    odds_a = float(data.get("odds_a") or 1.9)
+    odds_b = float(data.get("odds_b") or 1.9)
+
+    with db() as con:
+        tour = con.execute("SELECT * FROM tournaments WHERE id=?", (tournament_id,)).fetchone()
+        if not tour:
+            return jsonify({"ok": False, "error": "Tournament not found"}), 404
+
+        existing = con.execute("SELECT COUNT(*) AS c FROM fights WHERE tournament_id=?", (tournament_id,)).fetchone()["c"]
+        if existing:
+            return jsonify({"ok": False, "error": "This tournament already has generated fights. Delete or manage those first."}), 400
+
+        entries = con.execute("""
+            SELECT te.*, fi.name, fi.nickname
+            FROM tournament_entries te
+            JOIN fighters fi ON fi.id=te.fighter_id
+            WHERE te.tournament_id=?
+            ORDER BY te.seed ASC, te.id ASC
+        """, (tournament_id,)).fetchall()
+
+        if len(entries) < 2:
+            return jsonify({"ok": False, "error": "Need at least 2 fighters in the bracket"}), 400
+
+        generated = []
+        i = 0
+        match_no = 1
+        while i + 1 < len(entries):
+            a = entries[i]
+            b = entries[i + 1]
+            cur = con.execute("""
+                INSERT INTO fights(event_id, fighter_a_id, fighter_b_id, status, round_name, rule_set, odds_a, odds_b, starts_at, spectate_url, tournament_id, created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                tour["event_id"],
+                a["fighter_id"],
+                b["fighter_id"],
+                "scheduled",
+                f"{round_name} Match {match_no}",
+                rule_set,
+                odds_a,
+                odds_b,
+                starts_at,
+                spectate_url,
+                tournament_id,
+                now_iso(),
+            ))
+            generated.append(cur.lastrowid)
+            match_no += 1
+            i += 2
+
+        bye = None
+        if i < len(entries):
+            bye = entries[i]["fighter_id"]
+
+        con.execute("UPDATE tournaments SET status='live' WHERE id=?", (tournament_id,))
+        audit(con, request.user["torn_id"], "generate_tournament_round", f"tournament:{tournament_id}", {
+            "generated_fight_ids": generated,
+            "bye_fighter_id": bye,
+            "round_name": round_name,
+        })
+
+    return jsonify({"ok": True, "generated_fight_ids": generated, "bye_fighter_id": bye})
+
+
+@app.post("/api/admin/fights/<int:fight_id>/checklist")
+@require_admin
+def save_ref_checklist(fight_id):
+    data = request.get_json(force=True, silent=True) or {}
+
+    def flag(name):
+        return 1 if data.get(name) in (True, 1, "1", "true", "on", "yes") else 0
+
+    both_showed = flag("both_showed")
+    rules_confirmed = flag("rules_confirmed")
+    fight_started = flag("fight_started")
+    winner_confirmed = flag("winner_confirmed")
+    method_confirmed = flag("method_confirmed")
+    notes = (data.get("notes") or "").strip()[:1000]
+
+    with db() as con:
+        fight = con.execute("SELECT id FROM fights WHERE id=?", (fight_id,)).fetchone()
+        if not fight:
+            return jsonify({"ok": False, "error": "Fight not found"}), 404
+
+        con.execute("""
+            INSERT INTO ref_checklists(
+                fight_id, both_showed, rules_confirmed, fight_started,
+                winner_confirmed, method_confirmed, notes, updated_by, updated_at
+            )
+            VALUES(?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(fight_id) DO UPDATE SET
+                both_showed=excluded.both_showed,
+                rules_confirmed=excluded.rules_confirmed,
+                fight_started=excluded.fight_started,
+                winner_confirmed=excluded.winner_confirmed,
+                method_confirmed=excluded.method_confirmed,
+                notes=excluded.notes,
+                updated_by=excluded.updated_by,
+                updated_at=excluded.updated_at
+        """, (
+            fight_id, both_showed, rules_confirmed, fight_started,
+            winner_confirmed, method_confirmed, notes, request.user["torn_id"], now_iso()
+        ))
+        audit(con, request.user["torn_id"], "save_ref_checklist", f"fight:{fight_id}", {
+            "both_showed": both_showed,
+            "rules_confirmed": rules_confirmed,
+            "fight_started": fight_started,
+            "winner_confirmed": winner_confirmed,
+            "method_confirmed": method_confirmed,
+        })
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/events/<int:event_id>/delete")
+@require_admin
+def admin_delete_event(event_id):
+    with db() as con:
+        con.execute("DELETE FROM events WHERE id=?", (event_id,))
+        audit(con, request.user["torn_id"], "delete_event", f"event:{event_id}", {})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/fighters/<int:fighter_id>/update")
+@require_admin
+def admin_update_fighter(fighter_id):
+    data = request.get_json(force=True, silent=True) or {}
+    nickname = (data.get("nickname") or "").strip()[:60]
+    stats_range = (data.get("stats_range") or "").strip()[:80]
+    loadout = (data.get("loadout") or "").strip()[:180]
+    rank_points = data.get("rank_points")
+    record_w = data.get("record_w")
+    record_l = data.get("record_l")
+
+    fields, vals = [], []
+    if "nickname" in data:
+        fields.append("nickname=?"); vals.append(nickname)
+    if "stats_range" in data:
+        fields.append("stats_range=?"); vals.append(stats_range)
+    if "loadout" in data:
+        fields.append("loadout=?"); vals.append(loadout)
+    if rank_points not in (None, ""):
+        fields.append("rank_points=?"); vals.append(int(rank_points))
+    if record_w not in (None, ""):
+        fields.append("record_w=?"); vals.append(int(record_w))
+    if record_l not in (None, ""):
+        fields.append("record_l=?"); vals.append(int(record_l))
+
+    if not fields:
+        return jsonify({"ok": False, "error": "No fighter changes"}), 400
+
+    vals.append(fighter_id)
+    with db() as con:
+        con.execute(f"UPDATE fighters SET {', '.join(fields)} WHERE id=?", vals)
+        audit(con, request.user["torn_id"], "update_fighter", f"fighter:{fighter_id}", data)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/fighters/<int:fighter_id>/delete")
+@require_admin
+def admin_delete_fighter(fighter_id):
+    with db() as con:
+        con.execute("UPDATE fighters SET active=0 WHERE id=?", (fighter_id,))
+        audit(con, request.user["torn_id"], "delete_fighter", f"fighter:{fighter_id}", {})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/teams/<int:team_id>/update")
+@require_admin
+def admin_update_team(team_id):
+    data = request.get_json(force=True, silent=True) or {}
+    fields, vals = [], []
+
+    if "name" in data:
+        fields.append("name=?"); vals.append((data.get("name") or "").strip()[:100])
+    if "captain_torn_id" in data:
+        captain = data.get("captain_torn_id")
+        fields.append("captain_torn_id=?"); vals.append(int(captain) if captain else None)
+    if "members" in data:
+        members = data.get("members") or []
+        if isinstance(members, str):
+            members = [x.strip() for x in members.split(",") if x.strip()]
+        fields.append("members_json=?"); vals.append(json.dumps(members))
+    if "notes" in data:
+        fields.append("notes=?"); vals.append((data.get("notes") or "").strip()[:400])
+
+    if not fields:
+        return jsonify({"ok": False, "error": "No team changes"}), 400
+
+    vals.append(team_id)
+    with db() as con:
+        con.execute(f"UPDATE teams SET {', '.join(fields)} WHERE id=?", vals)
+        audit(con, request.user["torn_id"], "update_team", f"team:{team_id}", data)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/teams/<int:team_id>/delete")
+@require_admin
+def admin_delete_team(team_id):
+    with db() as con:
+        con.execute("DELETE FROM teams WHERE id=?", (team_id,))
+        audit(con, request.user["torn_id"], "delete_team", f"team:{team_id}", {})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/referees/<int:referee_id>/update")
+@require_admin
+def admin_update_referee(referee_id):
+    data = request.get_json(force=True, silent=True) or {}
+    fields, vals = [], []
+
+    if "name" in data:
+        fields.append("name=?"); vals.append((data.get("name") or "").strip()[:100])
+    if "torn_id" in data:
+        torn_id = data.get("torn_id")
+        fields.append("torn_id=?"); vals.append(int(torn_id) if torn_id else None)
+    if "status" in data:
+        status = (data.get("status") or "active").strip()[:40]
+        fields.append("status=?"); vals.append(status)
+    if "notes" in data:
+        fields.append("notes=?"); vals.append((data.get("notes") or "").strip()[:400])
+
+    if not fields:
+        return jsonify({"ok": False, "error": "No referee changes"}), 400
+
+    vals.append(referee_id)
+    with db() as con:
+        con.execute(f"UPDATE referees SET {', '.join(fields)} WHERE id=?", vals)
+        audit(con, request.user["torn_id"], "update_referee", f"referee:{referee_id}", data)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/referees/<int:referee_id>/delete")
+@require_admin
+def admin_delete_referee(referee_id):
+    with db() as con:
+        con.execute("DELETE FROM referees WHERE id=?", (referee_id,))
+        audit(con, request.user["torn_id"], "delete_referee", f"referee:{referee_id}", {})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/belts/<int:belt_id>/update")
+@require_admin
+def admin_update_belt(belt_id):
+    data = request.get_json(force=True, silent=True) or {}
+    fields, vals = [], []
+
+    if "name" in data:
+        fields.append("name=?"); vals.append((data.get("name") or "").strip()[:100])
+    if "division" in data:
+        fields.append("division=?"); vals.append((data.get("division") or "").strip()[:80])
+    if "holder_fighter_id" in data:
+        holder = data.get("holder_fighter_id")
+        fields.append("holder_fighter_id=?"); vals.append(int(holder) if holder else None)
+    if "status" in data:
+        fields.append("status=?"); vals.append((data.get("status") or "active").strip()[:40])
+
+    if not fields:
+        return jsonify({"ok": False, "error": "No belt changes"}), 400
+
+    vals.append(belt_id)
+    with db() as con:
+        con.execute(f"UPDATE belts SET {', '.join(fields)} WHERE id=?", vals)
+        audit(con, request.user["torn_id"], "update_belt", f"belt:{belt_id}", data)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/belts/<int:belt_id>/delete")
+@require_admin
+def admin_delete_belt(belt_id):
+    with db() as con:
+        con.execute("DELETE FROM belts WHERE id=?", (belt_id,))
+        audit(con, request.user["torn_id"], "delete_belt", f"belt:{belt_id}", {})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/fights/<int:fight_id>/proofs")
+@require_admin
+def add_fight_proof(fight_id):
+    data = request.get_json(force=True, silent=True) or {}
+    proof_type = (data.get("proof_type") or "note").strip()[:40]
+    title = (data.get("title") or "").strip()[:120]
+    url = (data.get("url") or "").strip()[:700]
+    notes = (data.get("notes") or "").strip()[:1200]
+
+    if not title and not url and not notes:
+        return jsonify({"ok": False, "error": "Proof title, URL, or notes required"}), 400
+
+    with db() as con:
+        fight = con.execute("SELECT id FROM fights WHERE id=?", (fight_id,)).fetchone()
+        if not fight:
+            return jsonify({"ok": False, "error": "Fight not found"}), 404
+
+        cur = con.execute("""
+            INSERT INTO fight_proofs(fight_id, proof_type, title, url, notes, created_by, created_at)
+            VALUES(?,?,?,?,?,?,?)
+        """, (fight_id, proof_type, title, url, notes, request.user["torn_id"], now_iso()))
+        proof_id = cur.lastrowid
+        audit(con, request.user["torn_id"], "add_fight_proof", f"fight:{fight_id}", {
+            "proof_id": proof_id,
+            "proof_type": proof_type,
+            "title": title,
+        })
+
+    return jsonify({"ok": True, "proof_id": proof_id})
+
+
+@app.post("/api/admin/proofs/<int:proof_id>/delete")
+@require_admin
+def delete_fight_proof(proof_id):
+    with db() as con:
+        con.execute("DELETE FROM fight_proofs WHERE id=?", (proof_id,))
+        audit(con, request.user["torn_id"], "delete_fight_proof", f"proof:{proof_id}", {})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/tournaments/<int:tournament_id>/generate-next")
+@require_admin
+def generate_tournament_next_round(tournament_id):
+    data = request.get_json(force=True, silent=True) or {}
+    round_name = (data.get("round_name") or "Next Round").strip()[:80]
+    rule_set = (data.get("rule_set") or "Tournament next round chaos rules").strip()[:240]
+    starts_at = (data.get("starts_at") or "").strip()[:80]
+    spectate_url = (data.get("spectate_url") or "").strip()[:500]
+    odds_a = float(data.get("odds_a") or 1.9)
+    odds_b = float(data.get("odds_b") or 1.9)
+
+    with db() as con:
+        tour = con.execute("SELECT * FROM tournaments WHERE id=?", (tournament_id,)).fetchone()
+        if not tour:
+            return jsonify({"ok": False, "error": "Tournament not found"}), 404
+
+        unfinished = con.execute("""
+            SELECT COUNT(*) AS c
+            FROM fights
+            WHERE tournament_id=? AND status NOT IN ('done','cancelled')
+        """, (tournament_id,)).fetchone()["c"]
+        if unfinished:
+            return jsonify({"ok": False, "error": "All current tournament fights must be done/cancelled before generating next round"}), 400
+
+        winners = con.execute("""
+            SELECT DISTINCT winner_fighter_id
+            FROM fights
+            WHERE tournament_id=? AND status='done' AND winner_fighter_id IS NOT NULL
+            ORDER BY id ASC
+        """, (tournament_id,)).fetchall()
+
+        fighter_ids = [int(r["winner_fighter_id"]) for r in winners if r["winner_fighter_id"]]
+        if len(fighter_ids) < 2:
+            return jsonify({"ok": False, "error": "Need at least 2 winners to generate the next round"}), 400
+
+        # Avoid generating the exact same next round twice when latest round is already scheduled/live.
+        existing_names = con.execute("""
+            SELECT COUNT(*) AS c
+            FROM fights
+            WHERE tournament_id=? AND round_name LIKE ?
+        """, (tournament_id, f"{round_name}%")).fetchone()["c"]
+        if existing_names:
+            return jsonify({"ok": False, "error": "A round with that name already exists for this tournament"}), 400
+
+        generated = []
+        i = 0
+        match_no = 1
+        while i + 1 < len(fighter_ids):
+            a = fighter_ids[i]
+            b = fighter_ids[i + 1]
+            cur = con.execute("""
+                INSERT INTO fights(event_id, fighter_a_id, fighter_b_id, status, round_name, rule_set, odds_a, odds_b, starts_at, spectate_url, tournament_id, created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                tour["event_id"],
+                a,
+                b,
+                "scheduled",
+                f"{round_name} Match {match_no}",
+                rule_set,
+                odds_a,
+                odds_b,
+                starts_at,
+                spectate_url,
+                tournament_id,
+                now_iso(),
+            ))
+            generated.append(cur.lastrowid)
+            i += 2
+            match_no += 1
+
+        bye = None
+        if i < len(fighter_ids):
+            bye = fighter_ids[i]
+
+        audit(con, request.user["torn_id"], "generate_tournament_next_round", f"tournament:{tournament_id}", {
+            "generated_fight_ids": generated,
+            "bye_fighter_id": bye,
+            "round_name": round_name,
+        })
+
+    return jsonify({"ok": True, "generated_fight_ids": generated, "bye_fighter_id": bye})
+
+
+@app.post("/api/challenges")
+@require_login
+def create_challenge():
+    data = request.get_json(force=True, silent=True) or {}
+    challenger_fighter_id = int(data.get("challenger_fighter_id") or 0)
+    target_fighter_id = int(data.get("target_fighter_id") or 0)
+    note = (data.get("note") or "").strip()[:500]
+
+    if not challenger_fighter_id or not target_fighter_id:
+        return jsonify({"ok": False, "error": "Choose both fighters"}), 400
+    if challenger_fighter_id == target_fighter_id:
+        return jsonify({"ok": False, "error": "You cannot challenge yourself"}), 400
+
+    with db() as con:
+        mine = con.execute("SELECT * FROM fighters WHERE id=? AND torn_id=? AND active=1", (challenger_fighter_id, request.user["torn_id"])).fetchone()
+        if not mine:
+            return jsonify({"ok": False, "error": "Challenger must be one of your fighter profiles"}), 403
+        target = con.execute("SELECT * FROM fighters WHERE id=? AND active=1", (target_fighter_id,)).fetchone()
+        if not target:
+            return jsonify({"ok": False, "error": "Target fighter not found"}), 404
+
+        cur = con.execute("""
+            INSERT INTO challenges(challenger_fighter_id, target_fighter_id, challenger_torn_id, note, status, created_at)
+            VALUES(?,?,?,?,?,?)
+        """, (challenger_fighter_id, target_fighter_id, request.user["torn_id"], note, "pending", now_iso()))
+        challenge_id = cur.lastrowid
+
+    return jsonify({"ok": True, "challenge_id": challenge_id})
+
+
+@app.post("/api/admin/challenges/<int:challenge_id>/status")
+@require_admin
+def set_challenge_status(challenge_id):
+    data = request.get_json(force=True, silent=True) or {}
+    status = (data.get("status") or "").strip()
+    if status not in ("pending", "approved", "rejected", "converted"):
+        return jsonify({"ok": False, "error": "Bad challenge status"}), 400
+
+    with db() as con:
+        con.execute("UPDATE challenges SET status=?, resolved_by=?, resolved_at=? WHERE id=?", (status, request.user["torn_id"], now_iso(), challenge_id))
+        audit(con, request.user["torn_id"], "set_challenge_status", f"challenge:{challenge_id}", {"status": status})
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/challenges/<int:challenge_id>/convert")
+@require_admin
+def convert_challenge_to_fight(challenge_id):
+    data = request.get_json(force=True, silent=True) or {}
+    event_id = int(data.get("event_id") or 1)
+    round_name = (data.get("round_name") or "Challenge Fight").strip()[:80]
+    rule_set = (data.get("rule_set") or "Challenge match chaos rules").strip()[:240]
+    starts_at = (data.get("starts_at") or "").strip()[:80]
+    spectate_url = (data.get("spectate_url") or "").strip()[:500]
+
+    with db() as con:
+        c = con.execute("SELECT * FROM challenges WHERE id=?", (challenge_id,)).fetchone()
+        if not c:
+            return jsonify({"ok": False, "error": "Challenge not found"}), 404
+
+        cur = con.execute("""
+            INSERT INTO fights(event_id, fighter_a_id, fighter_b_id, status, round_name, rule_set, odds_a, odds_b, starts_at, spectate_url, tournament_id, created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (event_id, c["challenger_fighter_id"], c["target_fighter_id"], "scheduled", round_name, rule_set, 1.9, 1.9, starts_at, spectate_url, None, now_iso()))
+        fight_id = cur.lastrowid
+        con.execute("UPDATE challenges SET status='converted', resolved_by=?, resolved_at=? WHERE id=?", (request.user["torn_id"], now_iso(), challenge_id))
+        audit(con, request.user["torn_id"], "convert_challenge_to_fight", f"challenge:{challenge_id}", {"fight_id": fight_id})
+
+    return jsonify({"ok": True, "fight_id": fight_id})
+
+
+@app.post("/api/admin/alerts")
+@require_admin
+def create_alert():
+    data = request.get_json(force=True, silent=True) or {}
+    title = (data.get("title") or "").strip()[:120]
+    body = (data.get("body") or "").strip()[:700]
+    alert_type = (data.get("alert_type") or "info").strip()[:40]
+    if not title:
+        return jsonify({"ok": False, "error": "Alert title required"}), 400
+
+    with db() as con:
+        cur = con.execute("INSERT INTO alerts(title, body, alert_type, created_by, created_at) VALUES(?,?,?,?,?)", (title, body, alert_type, request.user["torn_id"], now_iso()))
+        alert_id = cur.lastrowid
+        audit(con, request.user["torn_id"], "create_alert", f"alert:{alert_id}", {"title": title})
+
+    return jsonify({"ok": True, "alert_id": alert_id})
+
+
+@app.post("/api/admin/alerts/<int:alert_id>/delete")
+@require_admin
+def delete_alert(alert_id):
+    with db() as con:
+        con.execute("DELETE FROM alerts WHERE id=?", (alert_id,))
+        audit(con, request.user["torn_id"], "delete_alert", f"alert:{alert_id}", {})
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
