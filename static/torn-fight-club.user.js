@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Fight Club Launcher - Fries91
 // @namespace    Fries91.TornFightClub
-// @version      4.2.0
-// @description  Header launcher for Torn Fight Club with unread notification badge.
+// @version      4.3.0
+// @description  News-strip launcher for Torn Fight Club with unread notification badge.
 // @author       Fries91
 // @match        https://www.torn.com/*
 // @match        https://*.torn.com/*
@@ -20,76 +20,93 @@
 
   const APP_URL = 'https://torn-fight-club.onrender.com/app';
   const STATE_URL = 'https://torn-fight-club.onrender.com/api/state';
-  const BTN_ID = 'tfc-header-app-launcher';
-  const BADGE_ID = 'tfc-header-notify-badge';
-  const STYLE_ID = 'tfc-header-launcher-style';
+
+  const STRIP_ID = 'tfc-news-strip-launcher';
+  const BTN_ID = 'tfc-news-strip-button';
+  const BADGE_ID = 'tfc-news-strip-badge';
+  const STYLE_ID = 'tfc-news-strip-style';
 
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
+
     const css = `
+      #${STRIP_ID} {
+        width:100%!important;
+        min-height:30px!important;
+        display:flex!important;
+        align-items:center!important;
+        justify-content:center!important;
+        background:linear-gradient(90deg,#100,#210000,#100)!important;
+        border-top:1px solid rgba(255,70,70,.35)!important;
+        border-bottom:1px solid rgba(255,70,70,.45)!important;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 2px 8px rgba(0,0,0,.45)!important;
+        z-index:5!important;
+        position:relative!important;
+        box-sizing:border-box!important;
+        padding:3px 6px!important;
+      }
+
       #${BTN_ID} {
         display:inline-flex!important;
         align-items:center!important;
         justify-content:center!important;
-        gap:4px!important;
+        gap:6px!important;
+        width:auto!important;
+        max-width:94vw!important;
         min-height:24px!important;
-        max-height:28px!important;
-        padding:3px 8px!important;
-        margin:0 4px!important;
-        border:1px solid rgba(255,70,70,.75)!important;
+        padding:3px 14px!important;
+        border:1px solid rgba(255,70,70,.85)!important;
         border-radius:999px!important;
-        background:linear-gradient(135deg,#210000,#111)!important;
+        background:linear-gradient(135deg,#250000,#111)!important;
         color:#fff!important;
-        font-size:12px!important;
+        font-size:13px!important;
         font-weight:900!important;
         line-height:18px!important;
         text-decoration:none!important;
         cursor:pointer!important;
-        box-shadow:0 0 10px rgba(180,0,0,.35)!important;
+        box-shadow:0 0 12px rgba(180,0,0,.45)!important;
         white-space:nowrap!important;
-        z-index:50!important;
         position:relative!important;
         vertical-align:middle!important;
       }
+
       #${BTN_ID}:hover {
-        background:linear-gradient(135deg,#3a0000,#171717)!important;
+        background:linear-gradient(135deg,#3b0000,#181818)!important;
         border-color:#ff5555!important;
       }
+
       #${BADGE_ID} {
         display:none;
         position:absolute!important;
-        top:-7px!important;
+        top:-8px!important;
         right:-8px!important;
-        min-width:17px!important;
-        height:17px!important;
+        min-width:18px!important;
+        height:18px!important;
         padding:0 4px!important;
         border-radius:999px!important;
         background:#ff2d2d!important;
         color:#fff!important;
         border:1px solid #fff!important;
         font-size:10px!important;
-        line-height:16px!important;
+        line-height:17px!important;
         text-align:center!important;
         font-weight:900!important;
-        box-shadow:0 0 10px rgba(255,0,0,.8)!important;
+        box-shadow:0 0 10px rgba(255,0,0,.85)!important;
+        box-sizing:border-box!important;
       }
-      #tfc-emergency-holder {
-        position:fixed!important;
-        top:8px!important;
-        right:8px!important;
-        z-index:2147483646!important;
-        display:flex!important;
-        align-items:center!important;
-        justify-content:center!important;
-      }
+
       @media(max-width:700px){
+        #${STRIP_ID} {
+          min-height:28px!important;
+          padding:2px 4px!important;
+        }
         #${BTN_ID} {
-          font-size:11px!important;
-          padding:3px 7px!important;
-          max-width:156px!important;
+          font-size:12px!important;
+          padding:3px 12px!important;
         }
       }
     `;
+
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = css;
@@ -100,8 +117,15 @@
     window.open(APP_URL, '_blank', 'noopener,noreferrer');
   }
 
-  function makeButton() {
+  function makeStrip() {
     injectStyle();
+
+    let strip = document.getElementById(STRIP_ID);
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.id = STRIP_ID;
+    }
+
     let btn = document.getElementById(BTN_ID);
     if (!btn) {
       btn = document.createElement('button');
@@ -112,7 +136,9 @@
       btn.innerHTML = '<span>🥊 Torn Fight Club 🥊</span><span id="' + BADGE_ID + '">0</span>';
       btn.addEventListener('click', openApp);
     }
-    return btn;
+
+    if (!strip.contains(btn)) strip.appendChild(btn);
+    return strip;
   }
 
   function visible(el) {
@@ -121,90 +147,111 @@
     return r.width > 0 && r.height > 0;
   }
 
-  function findTextNodeElement(patterns) {
-    const all = Array.from(document.querySelectorAll('a,button,span,div,li'));
-    for (const el of all) {
-      const text = (el.textContent || '').trim().toLowerCase();
-      if (!text) continue;
-      if (patterns.some(p => text.includes(p))) return el;
-    }
-    return null;
+  function looksLikeNews(el) {
+    if (!el || !visible(el)) return false;
+    const r = el.getBoundingClientRect();
+    if (r.top < 120 || r.top > 330) return false;
+    const txt = (el.textContent || '').trim();
+    if (txt.length < 8) return false;
+
+    const lower = txt.toLowerCase();
+    const newsWords = [
+      'crippled', 'chain', 'detonated', 'highest rated', 'defeated',
+      'attacked', 'hospitalized', 'bounty', 'ranked', 'war', 'faction',
+      'completed', 'outside', 'resolution', 'news'
+    ];
+    return newsWords.some(w => lower.includes(w));
   }
 
-  function findHeaderRow() {
-    const gender = findTextNodeElement(['gender']);
-    if (gender) {
-      let p = gender;
-      for (let i = 0; i < 6 && p; i++, p = p.parentElement) {
-        if (visible(p) && p.children && p.children.length >= 2) return p;
+  function findNewsTicker() {
+    const selectors = [
+      '[class*="news"]',
+      '[class*="ticker"]',
+      '[class*="headline"]',
+      '[class*="areas"]',
+      '[class*="bar"]',
+      'div'
+    ];
+
+    const seen = new Set();
+    for (const sel of selectors) {
+      const els = Array.from(document.querySelectorAll(sel));
+      for (const el of els) {
+        if (seen.has(el)) continue;
+        seen.add(el);
+        if (looksLikeNews(el)) {
+          let candidate = el;
+          for (let i = 0; i < 3 && candidate.parentElement; i++) {
+            const p = candidate.parentElement;
+            const pr = p.getBoundingClientRect();
+            const cr = candidate.getBoundingClientRect();
+            if (visible(p) && pr.width >= cr.width && pr.top >= 110 && pr.top <= 330 && pr.height <= 70) {
+              candidate = p;
+            }
+          }
+          return candidate;
+        }
       }
     }
 
-    const candidates = Array.from(document.querySelectorAll(
-      '#topbar, #header, header, [class*="header"], [class*="top"], [class*="status"], [class*="menu"], [class*="bar"]'
-    ));
+    return null;
+  }
 
+  function findInsertPointFallback() {
+    // If the exact news ticker is not found, use the row below the main Torn logo/menu.
+    const candidates = Array.from(document.querySelectorAll('header, #header, [class*="header"], [class*="top"], [class*="menu"], [class*="bar"], div'));
     let best = null;
     let bestScore = -1;
+
     for (const el of candidates) {
       if (!visible(el)) continue;
       const r = el.getBoundingClientRect();
-      if (r.top > 160) continue;
+      if (r.top < 120 || r.top > 330) continue;
+      if (r.height < 18 || r.height > 80) continue;
+
       const text = (el.textContent || '').toLowerCase();
       let score = 0;
-      ['money','points','merits','gender','level','donator','energy','happy','nerve'].forEach(k => {
-        if (text.includes(k)) score += 2;
-      });
-      score += Math.min(6, el.children ? el.children.length : 0);
+      if (text.includes('torn')) score += 1;
+      if (text.includes('home')) score += 1;
+      if (text.includes('messages')) score += 1;
+      if (text.includes('events')) score += 1;
+      if (text.includes('stocks')) score += 1;
+      score += Math.max(0, 1000 - Math.abs(r.top - 250)) / 1000;
+
       if (score > bestScore) {
         bestScore = score;
         best = el;
       }
     }
+
     return best;
   }
 
-  function findBankIconNearbyRow() {
-    const bankish = findTextNodeElement(['bank', 'faction banking', 'banker']);
-    if (!bankish) return null;
-    let p = bankish;
-    for (let i = 0; i < 6 && p; i++, p = p.parentElement) {
-      if (visible(p) && p.children && p.children.length >= 2) return p;
-    }
-    return null;
-  }
-
-  function placeInEmergencyDock(btn) {
-    let holder = document.getElementById('tfc-emergency-holder');
-    if (!holder) {
-      holder = document.createElement('div');
-      holder.id = 'tfc-emergency-holder';
-      document.body.appendChild(holder);
-    }
-    if (!holder.contains(btn)) holder.appendChild(btn);
-  }
-
-  function mountButton() {
+  function mountStrip() {
     if (!document.body) return;
-    const btn = makeButton();
 
-    const bankRow = findBankIconNearbyRow();
-    if (bankRow && !bankRow.contains(btn)) {
-      try {
-        bankRow.appendChild(btn);
-        return;
-      } catch(e) {}
+    const strip = makeStrip();
+
+    const news = findNewsTicker();
+    if (news && news.parentElement) {
+      if (strip.parentElement !== news.parentElement || strip.previousElementSibling !== news) {
+        news.insertAdjacentElement('afterend', strip);
+      }
+      return;
     }
 
-    const row = findHeaderRow();
-    if (row && !row.contains(btn)) {
-      try {
-        row.appendChild(btn);
-        return;
-      } catch(e) {}
+    const fallback = findInsertPointFallback();
+    if (fallback && fallback.parentElement) {
+      if (strip.parentElement !== fallback.parentElement) {
+        fallback.insertAdjacentElement('afterend', strip);
+      }
+      return;
     }
 
-    placeInEmergencyDock(btn);
+    // Last resort: still not floating over content; keep it at top of body flow.
+    if (document.body.firstChild !== strip) {
+      document.body.insertBefore(strip, document.body.firstChild);
+    }
   }
 
   function getToken() {
@@ -219,6 +266,7 @@
     const badge = document.getElementById(BADGE_ID);
     const btn = document.getElementById(BTN_ID);
     if (!badge || !btn) return;
+
     count = Number(count || 0);
     if (count > 0) {
       badge.textContent = count > 99 ? '99+' : String(count);
@@ -261,20 +309,20 @@
   }
 
   function boot() {
-    mountButton();
+    mountStrip();
     fetchUnreadCount();
 
     let tries = 0;
     const mountTimer = setInterval(function () {
-      mountButton();
+      mountStrip();
       tries++;
-      if (tries > 180) clearInterval(mountTimer);
-    }, 1000);
+      if (tries > 240) clearInterval(mountTimer);
+    }, 800);
 
     setInterval(fetchUnreadCount, 30000);
 
     const obs = new MutationObserver(function () {
-      mountButton();
+      mountStrip();
     });
     obs.observe(document.documentElement || document.body, { childList:true, subtree:true });
   }
