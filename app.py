@@ -199,6 +199,35 @@ def init_db():
 
 
 
+
+            CREATE TABLE IF NOT EXISTS fight_props (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fight_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                option_a TEXT NOT NULL DEFAULT 'Yes',
+                option_b TEXT NOT NULL DEFAULT 'No',
+                option_c TEXT,
+                option_d TEXT,
+                status TEXT NOT NULL DEFAULT 'open',
+                winning_option TEXT,
+                created_by INTEGER,
+                created_at TEXT NOT NULL,
+                resolved_by INTEGER,
+                resolved_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS prop_wagers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prop_id INTEGER NOT NULL,
+                user_torn_id INTEGER NOT NULL,
+                pick_option TEXT NOT NULL,
+                points INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TEXT NOT NULL,
+                resolved_at TEXT,
+                UNIQUE(prop_id, user_torn_id)
+            );
+
             CREATE TABLE IF NOT EXISTS idea_votes (
                 idea_id INTEGER NOT NULL,
                 user_torn_id INTEGER NOT NULL,
@@ -282,6 +311,8 @@ def init_db():
         add_column_if_missing(con, "fights", "starts_at", "TEXT")
         add_column_if_missing(con, "fights", "spectate_url", "TEXT")
         add_column_if_missing(con, "fights", "tournament_id", "INTEGER")
+        add_column_if_missing(con, "fight_props", "option_c", "TEXT")
+        add_column_if_missing(con, "fight_props", "option_d", "TEXT")
         add_column_if_missing(con, "fights", "created_at", "TEXT DEFAULT ''")
 
         con.execute("UPDATE users SET role='member' WHERE torn_id NOT IN (?, ?)", tuple(ADMIN_IDS))
@@ -472,7 +503,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.3.2",
+        "version": "4.5.0",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -613,6 +644,15 @@ def state():
         audit_rows = [dict(x) for x in con.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 50").fetchall()]
         checklists = [dict(x) for x in con.execute("SELECT * FROM ref_checklists").fetchall()]
         proof_rows = [dict(x) for x in con.execute("SELECT * FROM fight_proofs ORDER BY id DESC").fetchall()]
+        prop_rows = [dict(x) for x in con.execute("SELECT * FROM fight_props ORDER BY id DESC").fetchall()]
+        prop_wager_rows = []
+        if token_user:
+            prop_wager_rows = [dict(x) for x in con.execute("""
+                SELECT *
+                FROM prop_wagers
+                WHERE user_torn_id=?
+                ORDER BY id DESC
+            """, (token_user["torn_id"],)).fetchall()]
         challenges = [dict(x) for x in con.execute("""
             SELECT c.*,
                    cf.name AS challenger_name,
@@ -652,6 +692,8 @@ def state():
         "audit": audit_rows,
         "ref_checklists": checklists,
         "fight_proofs": proof_rows,
+        "fight_props": prop_rows,
+        "my_prop_wagers": prop_wager_rows,
         "challenges": challenges,
         "alerts": alerts,
         "safety_note": "Prediction points only. Do not use this app to handle real Torn money, items, or off-platform gambling.",
@@ -1118,6 +1160,14 @@ def save_ref_checklist(fight_id):
     notes = (data.get("notes") or "").strip()[:1000]
 
     with db() as con:
+        try:
+            con.execute("ALTER TABLE fight_props ADD COLUMN option_c TEXT")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE fight_props ADD COLUMN option_d TEXT")
+        except Exception:
+            pass
         fight = con.execute("SELECT id FROM fights WHERE id=?", (fight_id,)).fetchone()
         if not fight:
             return jsonify({"ok": False, "error": "Fight not found"}), 404
@@ -1641,6 +1691,146 @@ def register_referee():
         audit(con, torn_id, "register_referee", f"referee:{ref_id}", {"event_id": event_id, "name": name})
 
     return jsonify({"ok": True, "referee_id": ref_id})
+
+
+@app.post("/api/admin/props")
+@require_admin
+def create_fight_prop():
+    data = request.get_json(force=True, silent=True) or {}
+    fight_id = int(data.get("fight_id") or 0)
+    title = (data.get("title") or "").strip()[:160]
+    option_a = (data.get("option_a") or "Option 1").strip()[:80]
+    option_b = (data.get("option_b") or "Option 2").strip()[:80]
+    option_c = (data.get("option_c") or "").strip()[:80]
+    option_d = (data.get("option_d") or "").strip()[:80]
+
+    if not fight_id or not title:
+        return jsonify({"ok": False, "error": "Fight and prop title required"}), 400
+
+    with db() as con:
+        fight = con.execute("SELECT id FROM fights WHERE id=?", (fight_id,)).fetchone()
+        if not fight:
+            return jsonify({"ok": False, "error": "Fight not found"}), 404
+        cur = con.execute("""
+            INSERT INTO fight_props(fight_id, title, option_a, option_b, option_c, option_d, status, created_by, created_at)
+            VALUES(?,?,?,?,?,?,?,?,?)
+        """, (fight_id, title, option_a, option_b, option_c, option_d, "open", request.user["torn_id"], now_iso()))
+        prop_id = cur.lastrowid
+        audit(con, request.user["torn_id"], "create_fight_prop", f"prop:{prop_id}", {"fight_id": fight_id, "title": title})
+
+    return jsonify({"ok": True, "prop_id": prop_id})
+
+
+@app.post("/api/props/<int:prop_id>/wager")
+@require_login
+def place_prop_wager(prop_id):
+    data = request.get_json(force=True, silent=True) or {}
+    pick_option = (data.get("pick_option") or "").strip()
+    points = int(data.get("points") or 0)
+
+    if pick_option not in ("A", "B", "C", "D"):
+        return jsonify({"ok": False, "error": "Choose one option"}), 400
+    if points < 1:
+        return jsonify({"ok": False, "error": "Wager must be at least 1 point"}), 400
+
+    with db() as con:
+        prop = con.execute("SELECT * FROM fight_props WHERE id=?", (prop_id,)).fetchone()
+        if not prop:
+            return jsonify({"ok": False, "error": "Prop not found"}), 404
+        if prop["status"] != "open":
+            return jsonify({"ok": False, "error": "This side wager is closed"}), 400
+
+        user = con.execute("SELECT * FROM users WHERE torn_id=?", (request.user["torn_id"],)).fetchone()
+        if not user:
+            return jsonify({"ok": False, "error": "User not found"}), 404
+
+        balance = int(user["prediction_points"] or 0)
+        existing = con.execute("SELECT * FROM prop_wagers WHERE prop_id=? AND user_torn_id=?", (prop_id, request.user["torn_id"])).fetchone()
+        existing_points = int(existing["points"] or 0) if existing else 0
+
+        # Let user change pick/amount. Only charge the difference.
+        diff = points - existing_points
+        if diff > 0 and balance < diff:
+            return jsonify({"ok": False, "error": "Not enough fun points"}), 400
+
+        if diff:
+            con.execute("UPDATE users SET prediction_points=prediction_points-? WHERE torn_id=?", (diff, request.user["torn_id"]))
+
+        if existing:
+            con.execute("""
+                UPDATE prop_wagers
+                SET pick_option=?, points=?, status='open'
+                WHERE prop_id=? AND user_torn_id=?
+            """, (pick_option, points, prop_id, request.user["torn_id"]))
+        else:
+            con.execute("""
+                INSERT INTO prop_wagers(prop_id, user_torn_id, pick_option, points, status, created_at)
+                VALUES(?,?,?,?,?,?)
+            """, (prop_id, request.user["torn_id"], pick_option, points, "open", now_iso()))
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/props/<int:prop_id>/resolve")
+@require_admin
+def resolve_prop(prop_id):
+    data = request.get_json(force=True, silent=True) or {}
+    winning_option = (data.get("winning_option") or "").strip()
+
+    if winning_option not in ("A", "B", "C", "D", "void"):
+        return jsonify({"ok": False, "error": "Winning option must be A, B, C, D, or void"}), 400
+
+    with db() as con:
+        prop = con.execute("SELECT * FROM fight_props WHERE id=?", (prop_id,)).fetchone()
+        if not prop:
+            return jsonify({"ok": False, "error": "Prop not found"}), 404
+        if prop["status"] == "resolved":
+            return jsonify({"ok": False, "error": "Prop already resolved"}), 400
+
+        wagers = con.execute("SELECT * FROM prop_wagers WHERE prop_id=?", (prop_id,)).fetchall()
+
+        if winning_option == "void":
+            for w in wagers:
+                con.execute("UPDATE users SET prediction_points=prediction_points+? WHERE torn_id=?", (int(w["points"] or 0), w["user_torn_id"]))
+                con.execute("UPDATE prop_wagers SET status='void', resolved_at=? WHERE id=?", (now_iso(), w["id"]))
+            status = "void"
+        else:
+            for w in wagers:
+                if w["pick_option"] == winning_option:
+                    payout = int(w["points"] or 0) * 2
+                    con.execute("UPDATE users SET prediction_points=prediction_points+? WHERE torn_id=?", (payout, w["user_torn_id"]))
+                    con.execute("UPDATE prop_wagers SET status='won', resolved_at=? WHERE id=?", (now_iso(), w["id"]))
+                else:
+                    con.execute("UPDATE prop_wagers SET status='lost', resolved_at=? WHERE id=?", (now_iso(), w["id"]))
+            status = "resolved"
+
+        con.execute("""
+            UPDATE fight_props
+            SET status=?, winning_option=?, resolved_by=?, resolved_at=?
+            WHERE id=?
+        """, (status, winning_option, request.user["torn_id"], now_iso(), prop_id))
+        audit(con, request.user["torn_id"], "resolve_fight_prop", f"prop:{prop_id}", {"winning_option": winning_option})
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/props/<int:prop_id>/delete")
+@require_admin
+def delete_prop(prop_id):
+    with db() as con:
+        prop = con.execute("SELECT * FROM fight_props WHERE id=?", (prop_id,)).fetchone()
+        if not prop:
+            return jsonify({"ok": False, "error": "Prop not found"}), 404
+
+        wagers = con.execute("SELECT * FROM prop_wagers WHERE prop_id=? AND status='open'", (prop_id,)).fetchall()
+        for w in wagers:
+            con.execute("UPDATE users SET prediction_points=prediction_points+? WHERE torn_id=?", (int(w["points"] or 0), w["user_torn_id"]))
+
+        con.execute("DELETE FROM prop_wagers WHERE prop_id=?", (prop_id,))
+        con.execute("DELETE FROM fight_props WHERE id=?", (prop_id,))
+        audit(con, request.user["torn_id"], "delete_fight_prop", f"prop:{prop_id}", {})
+
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
