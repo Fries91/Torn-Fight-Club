@@ -472,7 +472,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.2.0",
+        "version": "4.3.0",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -1607,6 +1607,40 @@ def delete_idea(idea_id):
         audit(con, request.user["torn_id"], "delete_idea", f"idea:{idea_id}", {})
 
     return jsonify({"ok": True})
+
+
+@app.post("/api/referees/register")
+@require_login
+def register_referee():
+    data = request.get_json(force=True, silent=True) or {}
+    event_id = data.get("event_id")
+    event_id = int(event_id) if event_id else None
+    name = (data.get("name") or request.user.get("name") or "").strip()[:100]
+    notes = (data.get("notes") or "").strip()[:400]
+    torn_id = int(request.user["torn_id"])
+
+    if not name:
+        return jsonify({"ok": False, "error": "Name required"}), 400
+
+    with db() as con:
+        existing = con.execute("SELECT id FROM referees WHERE torn_id=?", (torn_id,)).fetchone()
+        if existing:
+            con.execute("""
+                UPDATE referees
+                SET event_id=?, name=?, notes=?, status='pending'
+                WHERE torn_id=?
+            """, (event_id, name, notes, torn_id))
+            ref_id = existing["id"]
+        else:
+            cur = con.execute("""
+                INSERT INTO referees(event_id, name, torn_id, notes, status, created_at)
+                VALUES(?,?,?,?,?,?)
+            """, (event_id, name, torn_id, notes, "pending", now_iso()))
+            ref_id = cur.lastrowid
+
+        audit(con, torn_id, "register_referee", f"referee:{ref_id}", {"event_id": event_id, "name": name})
+
+    return jsonify({"ok": True, "referee_id": ref_id})
 
 
 if __name__ == "__main__":
