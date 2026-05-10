@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Fight Club - Fries91
 // @namespace    Fries91.TornFightClub
-// @version      2.1.0
-// @description  Auto-updating Torn Fight Club organizer. Private battle stats shown only to the logged-in fighter.
+// @version      2.1.1
+// @description  Auto-updating Torn Fight Club organizer. Private battle stats with always-visible launcher fix.
 // @author       Fries91
 // @match        https://www.torn.com/*
 // @match        https://*.torn.com/*
@@ -80,12 +80,32 @@
       body.tfc-open #tfc-header-btn { z-index:10!important; }
 
       #tfc-header-dock {
-        position:fixed!important;top:8px!important;right:8px!important;width:28px!important;height:28px!important;
-        display:flex!important;align-items:center!important;justify-content:center!important;background:rgba(12,0,0,.72)!important;
-        border:1px solid rgba(255,70,70,.55)!important;border-radius:8px!important;z-index:99970!important;box-shadow:0 4px 14px rgba(0,0,0,.55)!important;
+        position:fixed!important;
+        top:8px!important;
+        right:8px!important;
+        width:34px!important;
+        height:34px!important;
+        display:flex!important;
+        align-items:center!important;
+        justify-content:center!important;
+        background:rgba(12,0,0,.88)!important;
+        border:2px solid rgba(255,70,70,.85)!important;
+        border-radius:10px!important;
+        z-index:999970!important;
+        box-shadow:0 4px 18px rgba(0,0,0,.75)!important;
         pointer-events:auto!important;
+        opacity:1!important;
+        visibility:visible!important;
       }
-      #tfc-header-dock #tfc-header-btn { margin:0!important; }
+      #tfc-header-dock #tfc-header-btn {
+        margin:0!important;
+        width:30px!important;
+        height:30px!important;
+        min-width:30px!important;
+        min-height:30px!important;
+        font-size:22px!important;
+        line-height:30px!important;
+      }
       body.tfc-open #tfc-header-dock { z-index:10!important; }
 
       #tfc-overlay {
@@ -377,13 +397,26 @@
   function mountHeaderButton() {
     injectCss();
     removeBadCopies();
+
     const btn = makeButton();
 
+    // Safety first: put it in the top dock immediately so it never disappears.
+    // After that, try to move it into the real Torn header if a clean slot exists.
+    placeInEmergencyTopDock(btn);
+
+    // If the user wants it in Torn's header, these attempts move the same button
+    // from the dock into the detected header slot. If detection fails, dock remains.
     const bankSlot = getSlot(findBankLeaf());
-    if (insertAfterSlot(bankSlot, btn, 'faction-bank-header-slot')) { removeDockIfButtonPlaced(); return true; }
+    if (insertAfterSlot(bankSlot, btn, 'faction-bank-header-slot')) {
+      removeDockIfButtonPlaced();
+      return true;
+    }
 
     const genderSlot = getSlot(findGenderLeaf());
-    if (insertAfterSlot(genderSlot, btn, 'gender-header-slot')) { removeDockIfButtonPlaced(); return true; }
+    if (insertAfterSlot(genderSlot, btn, 'gender-header-slot')) {
+      removeDockIfButtonPlaced();
+      return true;
+    }
 
     const row = findBestHeaderRow();
     if (row) {
@@ -405,8 +438,10 @@
       } catch (e) {}
     }
 
-    return placeInEmergencyTopDock(btn);
+    // If nothing matched, the icon remains visible in top dock.
+    return true;
   }
+
 
   async function refresh() {
     if (APP.loading) return;
@@ -1713,15 +1748,19 @@
 
 
   function boot() {
-    mountHeaderButton();
+    // First visible attempt immediately.
+    try { mountHeaderButton(); } catch (e) {}
+
     let ticks = 0;
     const interval = setInterval(() => {
-      mountHeaderButton();
+      try { mountHeaderButton(); } catch (e) {}
       ticks++;
-      if (ticks > 240) clearInterval(interval);
-    }, 1000);
+      if (ticks > 360) clearInterval(interval);
+    }, 500);
 
-    const observer = new MutationObserver(() => mountHeaderButton());
+    const observer = new MutationObserver(() => {
+      try { mountHeaderButton(); } catch (e) {}
+    });
     observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
   }
 
