@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Fight Club Launcher - Fries91
 // @namespace    Fries91.TornFightClub
-// @version      4.3.0
-// @description  News-strip launcher for Torn Fight Club with unread notification badge.
+// @version      4.4.0
+// @description  Forced news-slot launcher for Torn Fight Club with notification badge.
 // @author       Fries91
 // @match        https://www.torn.com/*
 // @match        https://*.torn.com/*
@@ -21,29 +21,35 @@
   const APP_URL = 'https://torn-fight-club.onrender.com/app';
   const STATE_URL = 'https://torn-fight-club.onrender.com/api/state';
 
-  const STRIP_ID = 'tfc-news-strip-launcher';
-  const BTN_ID = 'tfc-news-strip-button';
-  const BADGE_ID = 'tfc-news-strip-badge';
-  const STYLE_ID = 'tfc-news-strip-style';
+  const WRAP_ID = 'tfc-forced-news-slot-wrap';
+  const BTN_ID = 'tfc-forced-news-slot-btn';
+  const BADGE_ID = 'tfc-forced-news-slot-badge';
+  const STYLE_ID = 'tfc-forced-news-slot-style';
 
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
 
     const css = `
-      #${STRIP_ID} {
+      #${WRAP_ID} {
+        position:fixed!important;
+        left:0!important;
+        right:0!important;
         width:100%!important;
-        min-height:30px!important;
+        min-height:31px!important;
+        max-height:33px!important;
         display:flex!important;
         align-items:center!important;
         justify-content:center!important;
-        background:linear-gradient(90deg,#100,#210000,#100)!important;
+        background:linear-gradient(90deg,#0b0000,#250000,#0b0000)!important;
         border-top:1px solid rgba(255,70,70,.35)!important;
-        border-bottom:1px solid rgba(255,70,70,.45)!important;
-        box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 2px 8px rgba(0,0,0,.45)!important;
-        z-index:5!important;
-        position:relative!important;
+        border-bottom:1px solid rgba(255,70,70,.55)!important;
+        box-shadow:0 2px 8px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.05)!important;
+        z-index:2147483000!important;
         box-sizing:border-box!important;
         padding:3px 6px!important;
+        opacity:1!important;
+        visibility:visible!important;
+        pointer-events:auto!important;
       }
 
       #${BTN_ID} {
@@ -54,25 +60,25 @@
         width:auto!important;
         max-width:94vw!important;
         min-height:24px!important;
-        padding:3px 14px!important;
-        border:1px solid rgba(255,70,70,.85)!important;
+        padding:3px 16px!important;
+        border:1px solid rgba(255,70,70,.9)!important;
         border-radius:999px!important;
-        background:linear-gradient(135deg,#250000,#111)!important;
+        background:linear-gradient(135deg,#280000,#111)!important;
         color:#fff!important;
         font-size:13px!important;
         font-weight:900!important;
         line-height:18px!important;
         text-decoration:none!important;
         cursor:pointer!important;
-        box-shadow:0 0 12px rgba(180,0,0,.45)!important;
+        box-shadow:0 0 12px rgba(180,0,0,.55)!important;
         white-space:nowrap!important;
         position:relative!important;
-        vertical-align:middle!important;
+        font-family:Arial,Helvetica,sans-serif!important;
       }
 
       #${BTN_ID}:hover {
-        background:linear-gradient(135deg,#3b0000,#181818)!important;
-        border-color:#ff5555!important;
+        background:linear-gradient(135deg,#420000,#171717)!important;
+        border-color:#ff6666!important;
       }
 
       #${BADGE_ID} {
@@ -96,13 +102,14 @@
       }
 
       @media(max-width:700px){
-        #${STRIP_ID} {
-          min-height:28px!important;
+        #${WRAP_ID} {
+          min-height:30px!important;
+          max-height:32px!important;
           padding:2px 4px!important;
         }
         #${BTN_ID} {
           font-size:12px!important;
-          padding:3px 12px!important;
+          padding:3px 13px!important;
         }
       }
     `;
@@ -117,13 +124,13 @@
     window.open(APP_URL, '_blank', 'noopener,noreferrer');
   }
 
-  function makeStrip() {
+  function makeWrap() {
     injectStyle();
 
-    let strip = document.getElementById(STRIP_ID);
-    if (!strip) {
-      strip = document.createElement('div');
-      strip.id = STRIP_ID;
+    let wrap = document.getElementById(WRAP_ID);
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = WRAP_ID;
     }
 
     let btn = document.getElementById(BTN_ID);
@@ -137,8 +144,10 @@
       btn.addEventListener('click', openApp);
     }
 
-    if (!strip.contains(btn)) strip.appendChild(btn);
-    return strip;
+    if (!wrap.contains(btn)) wrap.appendChild(btn);
+    if (!document.body.contains(wrap)) document.body.appendChild(wrap);
+
+    return wrap;
   }
 
   function visible(el) {
@@ -147,76 +156,30 @@
     return r.width > 0 && r.height > 0;
   }
 
-  function looksLikeNews(el) {
-    if (!el || !visible(el)) return false;
+  function isMostlyHorizontalRow(el) {
+    if (!visible(el)) return false;
     const r = el.getBoundingClientRect();
-    if (r.top < 120 || r.top > 330) return false;
-    const txt = (el.textContent || '').trim();
-    if (txt.length < 8) return false;
-
-    const lower = txt.toLowerCase();
-    const newsWords = [
-      'crippled', 'chain', 'detonated', 'highest rated', 'defeated',
-      'attacked', 'hospitalized', 'bounty', 'ranked', 'war', 'faction',
-      'completed', 'outside', 'resolution', 'news'
-    ];
-    return newsWords.some(w => lower.includes(w));
+    return r.width > window.innerWidth * 0.55 && r.height >= 18 && r.height <= 65;
   }
 
-  function findNewsTicker() {
-    const selectors = [
-      '[class*="news"]',
-      '[class*="ticker"]',
-      '[class*="headline"]',
-      '[class*="areas"]',
-      '[class*="bar"]',
-      'div'
-    ];
-
-    const seen = new Set();
-    for (const sel of selectors) {
-      const els = Array.from(document.querySelectorAll(sel));
-      for (const el of els) {
-        if (seen.has(el)) continue;
-        seen.add(el);
-        if (looksLikeNews(el)) {
-          let candidate = el;
-          for (let i = 0; i < 3 && candidate.parentElement; i++) {
-            const p = candidate.parentElement;
-            const pr = p.getBoundingClientRect();
-            const cr = candidate.getBoundingClientRect();
-            if (visible(p) && pr.width >= cr.width && pr.top >= 110 && pr.top <= 330 && pr.height <= 70) {
-              candidate = p;
-            }
-          }
-          return candidate;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  function findInsertPointFallback() {
-    // If the exact news ticker is not found, use the row below the main Torn logo/menu.
-    const candidates = Array.from(document.querySelectorAll('header, #header, [class*="header"], [class*="top"], [class*="menu"], [class*="bar"], div'));
+  function findRowByText(words, minTop, maxTop) {
+    const els = Array.from(document.querySelectorAll('div,nav,section,header,ul,li,a,span'));
     let best = null;
     let bestScore = -1;
 
-    for (const el of candidates) {
-      if (!visible(el)) continue;
+    for (const el of els) {
+      if (!isMostlyHorizontalRow(el)) continue;
       const r = el.getBoundingClientRect();
-      if (r.top < 120 || r.top > 330) continue;
-      if (r.height < 18 || r.height > 80) continue;
+      if (r.top < minTop || r.top > maxTop) continue;
 
       const text = (el.textContent || '').toLowerCase();
       let score = 0;
-      if (text.includes('torn')) score += 1;
-      if (text.includes('home')) score += 1;
-      if (text.includes('messages')) score += 1;
-      if (text.includes('events')) score += 1;
-      if (text.includes('stocks')) score += 1;
-      score += Math.max(0, 1000 - Math.abs(r.top - 250)) / 1000;
+      words.forEach(w => {
+        if (text.includes(w)) score += 3;
+      });
+      if (!score) continue;
+
+      score += Math.max(0, 800 - Math.abs(r.top - 300)) / 800;
 
       if (score > bestScore) {
         bestScore = score;
@@ -227,31 +190,56 @@
     return best;
   }
 
-  function mountStrip() {
-    if (!document.body) return;
+  function findNewsTickerRow() {
+    return findRowByText([
+      'share price', 'crippled', 'chain', 'detonated', 'decreased',
+      'increased', 'ranked', 'completed', 'hospitalized', 'faction',
+      'war', 'bounty', 'attacked', 'defeated'
+    ], 150, 340);
+  }
 
-    const strip = makeStrip();
+  function findIconNavRow() {
+    return findRowByText([
+      'messages', 'events', 'awards', 'home', 'items', 'city', 'wheel', 'stocks'
+    ], 190, 390);
+  }
 
-    const news = findNewsTicker();
-    if (news && news.parentElement) {
-      if (strip.parentElement !== news.parentElement || strip.previousElementSibling !== news) {
-        news.insertAdjacentElement('afterend', strip);
+  function computeTop() {
+    const wrapHeight = 31;
+
+    const news = findNewsTickerRow();
+    const nav = findIconNavRow();
+
+    if (news) {
+      const nr = news.getBoundingClientRect();
+      const afterNews = Math.round(nr.bottom);
+
+      if (nav) {
+        const vr = nav.getBoundingClientRect();
+        // Put it between the news ticker and icon row.
+        const gap = Math.max(0, vr.top - afterNews);
+        if (gap >= wrapHeight) return afterNews;
+        // If there is no natural gap, place it over the very top edge of the icon row.
+        return Math.max(afterNews, Math.round(vr.top - wrapHeight));
       }
-      return;
+
+      return afterNews;
     }
 
-    const fallback = findInsertPointFallback();
-    if (fallback && fallback.parentElement) {
-      if (strip.parentElement !== fallback.parentElement) {
-        fallback.insertAdjacentElement('afterend', strip);
-      }
-      return;
+    if (nav) {
+      const vr = nav.getBoundingClientRect();
+      return Math.max(160, Math.round(vr.top - wrapHeight));
     }
 
-    // Last resort: still not floating over content; keep it at top of body flow.
-    if (document.body.firstChild !== strip) {
-      document.body.insertBefore(strip, document.body.firstChild);
-    }
+    // PDA/mobile fallback based on common Torn layout:
+    // below the scrolling news row and above Messages/Events row.
+    return 294;
+  }
+
+  function applyPosition() {
+    const wrap = makeWrap();
+    const top = computeTop();
+    wrap.style.top = top + 'px';
   }
 
   function getToken() {
@@ -309,20 +297,25 @@
   }
 
   function boot() {
-    mountStrip();
+    applyPosition();
     fetchUnreadCount();
 
     let tries = 0;
-    const mountTimer = setInterval(function () {
-      mountStrip();
+    const timer = setInterval(function () {
+      applyPosition();
       tries++;
-      if (tries > 240) clearInterval(mountTimer);
+      if (tries > 240) clearInterval(timer);
     }, 800);
 
     setInterval(fetchUnreadCount, 30000);
 
+    window.addEventListener('resize', applyPosition);
+    window.addEventListener('orientationchange', function () {
+      setTimeout(applyPosition, 600);
+    });
+
     const obs = new MutationObserver(function () {
-      mountStrip();
+      applyPosition();
     });
     obs.observe(document.documentElement || document.body, { childList:true, subtree:true });
   }
