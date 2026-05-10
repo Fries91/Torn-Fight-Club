@@ -198,6 +198,16 @@ def init_db():
 
 
 
+
+            CREATE TABLE IF NOT EXISTS idea_votes (
+                idea_id INTEGER NOT NULL,
+                user_torn_id INTEGER NOT NULL,
+                vote TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (idea_id, user_torn_id)
+            );
+
             CREATE TABLE IF NOT EXISTS user_notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_torn_id INTEGER NOT NULL,
@@ -462,7 +472,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.1.0",
+        "version": "4.2.0",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -1561,6 +1571,40 @@ def mark_notifications_read():
             con.execute("UPDATE user_notifications SET is_read=1 WHERE id=? AND user_torn_id=?", (int(notification_id), request.user["torn_id"]))
         else:
             con.execute("UPDATE user_notifications SET is_read=1 WHERE user_torn_id=?", (request.user["torn_id"],))
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/ideas/<int:idea_id>/vote")
+@require_login
+def vote_idea(idea_id):
+    data = request.get_json(force=True, silent=True) or {}
+    vote = (data.get("vote") or "").strip().lower()
+    if vote not in ("yes", "no"):
+        return jsonify({"ok": False, "error": "Vote must be yes or no"}), 400
+
+    with db() as con:
+        idea = con.execute("SELECT id FROM ideas WHERE id=?", (idea_id,)).fetchone()
+        if not idea:
+            return jsonify({"ok": False, "error": "Idea not found"}), 404
+        con.execute("""
+            INSERT INTO idea_votes(idea_id, user_torn_id, vote, created_at, updated_at)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(idea_id, user_torn_id) DO UPDATE SET
+                vote=excluded.vote,
+                updated_at=excluded.updated_at
+        """, (idea_id, request.user["torn_id"], vote, now_iso(), now_iso()))
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/ideas/<int:idea_id>/delete")
+@require_admin
+def delete_idea(idea_id):
+    with db() as con:
+        con.execute("DELETE FROM idea_votes WHERE idea_id=?", (idea_id,))
+        con.execute("DELETE FROM ideas WHERE id=?", (idea_id,))
+        audit(con, request.user["torn_id"], "delete_idea", f"idea:{idea_id}", {})
 
     return jsonify({"ok": True})
 
