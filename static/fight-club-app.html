@@ -12,15 +12,18 @@ header{position:sticky;top:0;z-index:10;background:linear-gradient(90deg,#260000
 .status{font-size:12px;color:#aaa;text-align:right}
 .tabs{max-width:1180px;margin:auto;padding:0 12px 12px;display:flex;gap:6px;flex-wrap:wrap}
 button,.tab{border:1px solid #666;background:#222;color:#fff;border-radius:10px;padding:9px 11px;font-weight:900;cursor:pointer}
+button:active{transform:scale(.98)}
 .tab{border-radius:999px}.tab.active{background:#b40000;border-color:#ff5555}
 main{max-width:1180px;margin:auto;padding:12px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:10px}
 .wide{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+.admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
 .card{background:#141414;border:1px solid #333;border-radius:16px;padding:12px;box-shadow:0 12px 32px #0008}
 .hero{background:linear-gradient(135deg,#2b0000,#141414);border-color:#a10000}
 .private{background:linear-gradient(135deg,#111827,#0b0b0b);border-color:#60a5fa}
 .belt{background:linear-gradient(135deg,#3a2600,#111);border-color:#c79a22}
 .ref{background:linear-gradient(135deg,#081b2f,#111);border-color:#3aa5ff}
+.team{background:linear-gradient(135deg,#10220f,#111);border-color:#22c55e}
 h3{margin:0 0 8px;color:#ff4b4b}.muted{color:#aaa;font-size:12px}
 .pill{display:inline-block;border:1px solid #555;background:#222;border-radius:999px;padding:4px 8px;margin:2px;font-size:12px}
 .good{border-color:#22c55e;background:#052e16;color:#bbf7d0}.warn{border-color:#f59e0b;background:#332500;color:#fde68a}.live{border-color:#ef4444;background:#3b0505;color:#fecaca}
@@ -30,8 +33,15 @@ textarea{min-height:90px}.green{background:#064b20;border-color:#20c060}.red{bac
 .mini{background:#0c0c0c;border:1px solid #2a2a2a;border-radius:10px;padding:8px;margin:6px 0}
 .empty{border:1px dashed #555;border-radius:12px;color:#aaa;text-align:center;padding:14px}
 .vs{font-size:22px;font-weight:900;color:#ff4b4b}.rank{font-size:22px;color:#ff4b4b;font-weight:900}
-#toast{position:fixed;right:12px;bottom:12px;background:#111;border:1px solid #ff4b4b;border-radius:12px;padding:10px;display:none;z-index:50;max-width:90vw}
-@media(max-width:650px){.head{display:block}.status{text-align:left;margin-top:5px}.grid,.wide{grid-template-columns:1fr}main{padding:8px}.tab{font-size:12px;padding:7px 8px}}
+.section-title{margin:14px 0 8px;color:#fff;font-size:16px;border-left:4px solid #b40000;padding-left:8px}
+#toast{position:fixed;right:12px;bottom:62px;background:#111;border:1px solid #ff4b4b;border-radius:12px;padding:10px;display:none;z-index:50;max-width:90vw}
+.bottom-quick{position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #8b0000;display:flex;gap:6px;justify-content:center;padding:7px;z-index:40}
+.bottom-quick button{font-size:12px;padding:7px 9px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.78);display:none;align-items:center;justify-content:center;z-index:80;padding:12px}
+.modal .box{background:#141414;border:1px solid #8b0000;border-radius:16px;padding:12px;max-width:520px;width:100%;box-shadow:0 18px 50px #000}
+.bracket-round{border-left:4px solid #b40000;padding-left:8px;margin:10px 0}
+.bracket-fight{background:#0c0c0c;border:1px solid #333;border-radius:10px;padding:8px;margin:6px 0}
+@media(max-width:650px){.head{display:block}.status{text-align:left;margin-top:5px}.grid,.wide,.admin-grid{grid-template-columns:1fr}main{padding:8px 8px 68px}.tab{font-size:12px;padding:7px 8px}.tabs{max-height:86px;overflow:auto}.card{padding:10px}.section-title{margin-top:10px}}
 </style>
 </head>
 <body>
@@ -51,25 +61,16 @@ textarea{min-height:90px}.green{background:#064b20;border-color:#20c060}.red{bac
 </main>
 
 <div id="toast"></div>
+<div class="bottom-quick"><button onclick="setTab('overview')">Home</button><button onclick="setTab('fightcard')">Fights</button><button onclick="setTab('myfighter')">Mine</button><button onclick="setTab('announcements')">Posts</button></div>
+<div class="modal" id="spectateModal"><div class="box"><h3>👀 Spectate / Proof Menu</h3><div id="spectateModalBody"></div><button onclick="closeSpectateMenu()">Close</button></div></div>
 
 <script>
 const BASE = "https://torn-fight-club.onrender.com";
 let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
-  ok: true,
-  user: null,
-  events: [],
-  fighters: [],
-  fights: [],
-  ideas: [],
-  leaderboard: [],
-  my_predictions: [],
-  tournaments: [],
-  tournament_entries: [],
-  belts: [],
-  teams: [],
-  referees: []
+  ok: true, user: null, events: [], fighters: [], fights: [], ideas: [], leaderboard: [],
+  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], challenges: [], alerts: []
 };
 
 const ADMINS = [3679030, 1905671];
@@ -84,6 +85,11 @@ function fights(status){return (STATE.fights||[]).filter(f=>!status||f.status===
 function eventOptions(){return (STATE.events||[]).map(e=>`<option value="${e.id}">${e.id} — ${esc(e.title)}</option>`).join("") || `<option value="1">Default Event</option>`;}
 function fighterOptions(label="Choose fighter"){return `<option value="">${esc(label)}</option>` + (STATE.fighters||[]).map(f=>`<option value="${f.id}">${f.id} — ${esc(f.nickname||f.name)} [${f.torn_id}]</option>`).join("");}
 function fightOptions(){return `<option value="">Choose fight</option>` + (STATE.fights||[]).map(f=>`<option value="${f.id}">${f.id} — ${esc(f.fighter_a_nick||f.fighter_a_name)} vs ${esc(f.fighter_b_nick||f.fighter_b_name)} — ${esc(f.status)}</option>`).join("");}
+function teamOptions(){return `<option value="">Choose team</option>` + (STATE.teams||[]).map(t=>`<option value="${t.id}">${t.id} — ${esc(t.name)}</option>`).join("");}
+function refOptions(){return `<option value="">Choose ref</option>` + (STATE.referees||[]).map(r=>`<option value="${r.id}">${r.id} — ${esc(r.name)}</option>`).join("");}
+function eventEditOptions(){return `<option value="">Choose event</option>` + (STATE.events||[]).map(e=>`<option value="${e.id}">${e.id} — ${esc(e.title)}</option>`).join("");}
+function beltOptions(){return `<option value="">Choose belt</option>` + (STATE.belts||[]).map(b=>`<option value="${b.id}">${b.id} — ${esc(b.name)}</option>`).join("");}
+function tournamentOptions(){return `<option value="">Choose tournament</option>` + (STATE.tournaments||[]).map(t=>`<option value="${t.id}">${t.id} — ${esc(t.title)}</option>`).join("");}
 function fighterName(id){const f=(STATE.fighters||[]).find(x=>Number(x.id)===Number(id));return f ? (f.nickname||f.name) : "Fighter "+id;}
 
 async function api(path, method="GET", body=null){
@@ -93,10 +99,7 @@ async function api(path, method="GET", body=null){
     const res = await fetch(BASE + path, {
       method,
       signal: controller.signal,
-      headers: {
-        "Content-Type":"application/json",
-        ...(TOKEN ? {"Authorization":"Bearer "+TOKEN} : {})
-      },
+      headers: {"Content-Type":"application/json", ...(TOKEN ? {"Authorization":"Bearer "+TOKEN} : {})},
       body: body ? JSON.stringify(body) : null
     });
     const text = await res.text();
@@ -105,41 +108,68 @@ async function api(path, method="GET", body=null){
     catch(e){throw new Error("Backend returned bad JSON.");}
     if(!res.ok || data.ok === false) throw new Error(data.error || "Backend request failed.");
     return data;
-  }finally{
-    clearTimeout(timer);
-  }
+  }finally{clearTimeout(timer);}
 }
 
 async function refresh(){
   $("userStatus").textContent = "Refreshing...";
-  try{
-    STATE = await api("/api/state");
-    render();
-  }catch(e){
+  try{STATE = await api("/api/state"); render();}
+  catch(e){
     $("userStatus").textContent = "Offline";
-    $("app").innerHTML = `
-      <div class="card hero">
-        <h3>Connection Error</h3>
-        <p>${esc(e.message)}</p>
-        <p class="muted">Check that Render is deployed and /api/state works.</p>
-        <button onclick="refresh()">Retry</button>
-      </div>
-    `;
+    $("app").innerHTML = `<div class="card hero"><h3>Connection Error</h3><p>${esc(e.message)}</p><p class="muted">Check Render and /api/state.</p><button onclick="refresh()">Retry</button></div>`;
   }
 }
 
 function renderTabs(){
-  const tabs = ["overview","fightcard","fighters","picks","leaderboard","tournaments","belts","teams","refs","ideas","rules","settings"];
+  const tabs = ["overview","fightcard","fighters","myfighter","challenges","picks","leaderboard","tournaments","belts","teams","refs","announcements","ideas","rules","settings"];
   if(isAdmin()) tabs.push("admin");
-  const labels = {overview:"Overview",fightcard:"Fight Card",fighters:"Fighters",picks:"Picks",leaderboard:"Ranks",tournaments:"Brackets",belts:"Belts",teams:"Teams",refs:"Refs",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
+  const labels = {overview:"Overview",fightcard:"Fight Card",fighters:"Fighters",myfighter:"My Fighter",challenges:"Challenges",picks:"Picks",leaderboard:"Ranks",tournaments:"Brackets",belts:"Belts",teams:"Teams",refs:"Refs",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
 
 function render(){
   $("userStatus").innerHTML = userLine();
   renderTabs();
-  const pages = {overview, fightcard, fighters, picks, leaderboard, tournaments, belts, teams, refs, ideas, rules, settings, admin};
+  const pages = {overview, fightcard, fighters, myfighter, challenges, picks, leaderboard, tournaments, belts, teams, refs, announcements, ideas, rules, settings, admin};
   $("app").innerHTML = (pages[TAB] || overview)();
+}
+
+
+function checklistForFight(fightId){
+  return (STATE.ref_checklists||[]).find(c=>Number(c.fight_id)===Number(fightId)) || {};
+}
+function checklistSummary(fightId){
+  const c = checklistForFight(fightId);
+  const checks = ["both_showed","rules_confirmed","fight_started","winner_confirmed","method_confirmed"];
+  const done = checks.filter(k=>Number(c[k]||0)===1).length;
+  const cls = done===5 ? "good" : done>0 ? "warn" : "";
+  return `<span class="pill ${cls}">Ref checklist ${done}/5</span>`;
+}
+function checkbox(name, label, checked){
+  return `<label class="mini"><input type="checkbox" id="${name}" ${checked ? "checked" : ""} style="width:auto;margin-right:6px">${label}</label>`;
+}
+
+
+function proofsForFight(fightId){
+  return (STATE.fight_proofs||[]).filter(p=>Number(p.fight_id)===Number(fightId));
+}
+function proofSummary(fightId){
+  const n = proofsForFight(fightId).length;
+  return `<span class="pill ${n ? "good" : ""}">Proofs ${n}</span>`;
+}
+function proofListHtml(fightId, adminControls=false){
+  const proofs = proofsForFight(fightId);
+  if(!proofs.length) return `<div class="empty">No proof links or notes saved yet.</div>`;
+  return proofs.map(p=>`
+    <div class="mini">
+      <b>${esc(p.title || p.proof_type || "Proof")}</b>
+      <span class="pill">${esc(p.proof_type || "note")}</span>
+      ${p.url ? `<br><button class="blue" onclick="openSpectate('${encodeURIComponent(String(p.url||""))}')">Open Link</button>` : ""}
+      ${p.notes ? `<div class="muted">${esc(p.notes)}</div>` : ""}
+      <div class="muted">Proof ID ${p.id} • ${esc(p.created_at||"")}</div>
+      ${adminControls ? `<button class="red" onclick="deleteProof(${p.id})">Delete Proof</button>` : ""}
+    </div>
+  `).join("");
 }
 
 function fightCard(f, pick=false){
@@ -152,7 +182,10 @@ function fightCard(f, pick=false){
       <div class="between"><h3>${esc(f.round_name||"Fight Card")}</h3><span class="pill ${cls}">${esc(f.status)}</span></div>
       <div class="row"><b>${esc(a)}</b><span class="vs">VS</span><b>${esc(b)}</b></div>
       <div class="muted">${esc(f.rule_set||"No rules set")}</div>
-      <span class="pill">Fight ID ${f.id}</span><span class="pill">A odds ${f.odds_a}</span><span class="pill">B odds ${f.odds_b}</span>
+      <span class="pill">Fight ID ${f.id}</span><span class="pill">A odds ${f.odds_a}</span><span class="pill">B odds ${f.odds_b}</span>${checklistSummary(f.id)}${proofSummary(f.id)}
+      ${f.starts_at ? `<span class="pill">${esc(f.starts_at)}</span>` : ""}
+      ${f.tournament_id ? `<span class="pill">Tournament ${esc(f.tournament_id)}</span>` : ""}
+      ${f.spectate_url ? `<div style="margin-top:8px"><button class="blue" onclick="openSpectateMenu(${f.id})">👀 Spectate</button></div>` : ""}
       ${f.winner_fighter_id ? `<div><span class="pill good">Winner ${esc(fighterName(f.winner_fighter_id))} • ${esc(f.result_method)}</span></div>` : ""}
       ${pick && ["live","scheduled"].includes(f.status) ? (
         mine ? `<div><span class="pill good">You picked ${esc(fighterName(mine.pick_fighter_id))} for ${mine.points} pts</span></div>` :
@@ -174,8 +207,8 @@ function overview(){
         <span class="pill good">Prediction points only</span>
         <div class="row" style="margin-top:8px">
           <button class="green" onclick="setTab('fightcard')">Fight Card</button>
-          <button class="blue" onclick="setTab('fighters')">Fighters</button>
-          <button class="gold" onclick="setTab('picks')">Picks</button>
+          <button class="blue" onclick="setTab('fighters')">Fighters</button><button class="blue" onclick="setTab('myfighter')">My Fighter</button>
+          <button class="gold" onclick="setTab('picks')">Picks</button><button class="blue" onclick="setTab('announcements')">Posts</button>
           ${isAdmin()?`<button class="red" onclick="setTab('admin')">Admin</button>`:""}
         </div>
       </div>
@@ -185,12 +218,15 @@ function overview(){
         <span class="pill warn">Scheduled ${fights("scheduled").length}</span>
         <span class="pill good">Done ${fights("done").length}</span>
         <span class="pill">Fighters ${(STATE.fighters||[]).length}</span>
+        <span class="pill">Belts ${(STATE.belts||[]).length}</span>
+        <span class="pill">Teams ${(STATE.teams||[]).length}</span>
       </div>
       <div class="card">
         <h3>Top Fighter</h3>
         ${top ? `<b>${esc(top.nickname||top.name)}</b><br><span class="pill">Rank ${top.rank_points}</span><span class="pill">Record ${top.record_w}-${top.record_l}</span>` : `<div class="empty">No fighters yet.</div>`}
       </div>
     </div>
+    <div class="card" style="margin-top:10px"><h3>Latest Alerts</h3>${alertsHtml()}</div>
     <div class="card" style="margin-top:10px">
       <h3>Next Fight</h3>
       ${next ? fightCard(next,false) : `<div class="empty">No live or scheduled fight yet.</div>`}
@@ -223,6 +259,184 @@ function fighters(){
   `;
 }
 
+
+
+function alertsHtml(){
+  const alerts = STATE.alerts || [];
+  if(!alerts.length) return `<div class="empty">No alerts yet.</div>`;
+  return alerts.slice(0,6).map(a=>`<div class="mini"><b>${esc(a.title)}</b><span class="pill">${esc(a.alert_type||"info")}</span><div>${esc(a.body||"")}</div><div class="muted">${esc(a.created_at||"")}</div></div>`).join("");
+}
+function fightsForTournament(tid){
+  return (STATE.fights||[]).filter(f=>Number(f.tournament_id)===Number(tid));
+}
+function bracketView(t){
+  const fs = fightsForTournament(t.id);
+  if(!fs.length) return `<div class="empty">No generated fights yet.</div>`;
+  const groups = {};
+  fs.forEach(f=>{
+    const name = String(f.round_name||"Round").replace(/ Match \d+$/,"");
+    if(!groups[name]) groups[name]=[];
+    groups[name].push(f);
+  });
+  return Object.keys(groups).map(round=>`
+    <div class="bracket-round"><b>${esc(round)}</b>
+      ${groups[round].map(f=>`<div class="bracket-fight">${esc(f.fighter_a_nick||f.fighter_a_name||"A")} vs ${esc(f.fighter_b_nick||f.fighter_b_name||"B")} <span class="pill ${f.status==="done"?"good":f.status==="live"?"live":"warn"}">${esc(f.status)}</span>${f.winner_fighter_id?`<div class="muted">Winner: ${esc(fighterName(f.winner_fighter_id))}</div>`:""}</div>`).join("")}
+    </div>`).join("");
+}
+function spectateMenuHtml(fightId){
+  const f = (STATE.fights||[]).find(x=>Number(x.id)===Number(fightId));
+  if(!f) return `<div class="empty">Fight not found.</div>`;
+  const proofs = proofsForFight(fightId);
+  return `
+    <div class="mini"><b>${esc(f.fighter_a_nick||f.fighter_a_name||"A")} vs ${esc(f.fighter_b_nick||f.fighter_b_name||"B")}</b><br><span class="muted">${esc(f.round_name||"Fight")}</span></div>
+    ${f.spectate_url ? `<button class="blue" onclick="window.open('${esc(f.spectate_url)}','_blank','noopener,noreferrer')">Open Spectate Link</button>` : `<div class="empty">No main spectate link set.</div>`}
+    <h3 style="margin-top:10px">Proof / Report Links</h3>
+    ${proofs.length ? proofs.map(p=>`<div class="mini"><b>${esc(p.title||p.proof_type||"Proof")}</b><span class="pill">${esc(p.proof_type||"note")}</span>${p.url?`<br><button class="blue" onclick="window.open('${esc(p.url)}','_blank','noopener,noreferrer')">Open Link</button>`:""}${p.notes?`<div class="muted">${esc(p.notes)}</div>`:""}</div>`).join("") : `<div class="empty">No proof links yet.</div>`}
+  `;
+}
+function openSpectateMenu(fightId){
+  $("spectateModalBody").innerHTML = spectateMenuHtml(fightId);
+  $("spectateModal").style.display = "flex";
+}
+function closeSpectateMenu(){
+  $("spectateModal").style.display = "none";
+}
+
+function myProfiles(){
+  if(!STATE.user) return [];
+  return (STATE.fighters||[]).filter(f=>Number(f.torn_id)===Number(STATE.user.torn_id));
+}
+
+function fightsForFighter(fid, statuses=null){
+  const list = (STATE.fights||[]).filter(f=>Number(f.fighter_a_id)===Number(fid) || Number(f.fighter_b_id)===Number(fid));
+  if(!statuses) return list;
+  return list.filter(f=>statuses.includes(f.status));
+}
+
+function myPickRows(){
+  return (STATE.my_predictions||[]).map(p=>{
+    const fight = (STATE.fights||[]).find(f=>Number(f.id)===Number(p.fight_id));
+    return {prediction:p, fight};
+  });
+}
+
+function myfighter(){
+  if(!STATE.user){
+    return `<div class="card hero"><h3>My Fighter Dashboard</h3><div class="empty">Login in Settings first.</div><button class="blue" onclick="setTab('settings')">Go to Settings</button></div>`;
+  }
+
+  const mine = myProfiles();
+  const profile = mine[0] || null;
+  const allMyFights = profile ? fightsForFighter(profile.id) : [];
+  const upcoming = profile ? fightsForFighter(profile.id, ["scheduled","live"]) : [];
+  const completed = profile ? fightsForFighter(profile.id, ["done"]) : [];
+  const pickRows = myPickRows();
+
+  return `
+    <div class="grid wide">
+      <div class="card hero">
+        <h3>👤 My Fighter Dashboard</h3>
+        <p class="muted">Your profile, fights, picks, rank, and private stats in one place.</p>
+        <span class="pill">Logged in as ${esc(STATE.user.name)} [${STATE.user.torn_id}]</span>
+        <span class="pill">Prediction points ${STATE.user.prediction_points}</span>
+      </div>
+
+      <div class="card private">
+        <h3>🔒 My Private Battle Stats</h3>
+        ${privateStats()}
+      </div>
+
+      <div class="card">
+        <h3>🥊 My Fighter Profile</h3>
+        ${profile ? `
+          <h3>${esc(profile.nickname||profile.name)}</h3>
+          <div>${esc(profile.name)} [${profile.torn_id}]</div>
+          <div class="muted">${esc(profile.stats_range||"No stats range")}</div>
+          <div>${esc(profile.loadout||"No loadout")}</div>
+          <span class="pill">Record ${profile.record_w}-${profile.record_l}</span>
+          <span class="pill">Rank ${profile.rank_points}</span>
+          <span class="pill">Fighter ID ${profile.id}</span>
+        ` : `
+          <div class="empty">You have not registered as a fighter yet.</div>
+          <button class="green" onclick="setTab('fighters')">Register Fighter</button>
+        `}
+      </div>
+    </div>
+
+    <div class="section-title">My Fight Summary</div>
+    <div class="grid wide">
+      <div class="card">
+        <h3>📅 Upcoming / Live Fights</h3>
+        ${upcoming.length ? upcoming.map(f=>fightCard(f,false)).join("") : `<div class="empty">No upcoming fights for you.</div>`}
+      </div>
+      <div class="card">
+        <h3>✅ Completed Fights</h3>
+        ${completed.length ? completed.map(f=>fightCard(f,false)).join("") : `<div class="empty">No completed fights yet.</div>`}
+      </div>
+    </div>
+
+    <div class="section-title">My Picks</div>
+    <div class="grid wide">
+      <div class="card">
+        <h3>💰 Pick History</h3>
+        ${pickRows.length ? pickRows.map(row=>{
+          const p = row.prediction;
+          const f = row.fight;
+          return `<div class="mini">
+            <b>Fight ${esc(p.fight_id)}</b> — Picked ${esc(fighterName(p.pick_fighter_id))} for ${esc(p.points)} pts
+            <br><span class="muted">${f ? esc((f.fighter_a_nick||f.fighter_a_name||"A") + " vs " + (f.fighter_b_nick||f.fighter_b_name||"B")) : "Fight not found"} • ${esc(p.status||"")}</span>
+          </div>`;
+        }).join("") : `<div class="empty">No picks yet.</div>`}
+      </div>
+
+      <div class="card">
+        <h3>📊 My Numbers</h3>
+        <span class="pill">Profiles ${mine.length}</span>
+        <span class="pill">All fights ${allMyFights.length}</span>
+        <span class="pill">Upcoming ${upcoming.length}</span>
+        <span class="pill">Completed ${completed.length}</span>
+        <span class="pill">Picks ${pickRows.length}</span>
+      </div>
+    </div>
+  `;
+}
+
+
+
+function challenges(){
+  const mine = myProfiles();
+  const pending = (STATE.challenges||[]).filter(c=>c.status==="pending");
+  return `
+    <div class="card hero"><h3>🥊 Challenges / Callouts</h3><p class="muted">Call out another fighter. Admin can approve or convert it into a scheduled fight.</p></div>
+    <div class="grid wide" style="margin-top:10px">
+      <div class="card">
+        <h3>Create Challenge</h3>
+        ${STATE.user ? `
+          <select id="challengeMine">${mine.map(f=>`<option value="${f.id}">${esc(f.nickname||f.name)} [${f.id}]</option>`).join("") || `<option value="">No fighter profile</option>`}</select>
+          <select id="challengeTarget">${fighterOptions("Target fighter")}</select>
+          <textarea id="challengeNote" placeholder="Callout note / trash talk / proposed rules"></textarea>
+          <button class="green" onclick="createChallenge()">Send Challenge</button>
+        ` : `<div class="empty">Login first.</div>`}
+      </div>
+      <div class="card">
+        <h3>Pending Challenges</h3>
+        ${pending.length ? pending.map(c=>challengeCard(c)).join("") : `<div class="empty">No pending challenges.</div>`}
+      </div>
+    </div>
+    <div class="section-title">Challenge History</div>
+    <div class="grid wide">${(STATE.challenges||[]).map(c=>challengeCard(c)).join("") || `<div class="empty">No challenges yet.</div>`}</div>
+  `;
+}
+function challengeCard(c){
+  return `<div class="card">
+    <h3>${esc(c.challenger_nick||c.challenger_name)} called out ${esc(c.target_nick||c.target_name)}</h3>
+    <span class="pill ${c.status==="pending"?"warn":c.status==="converted"?"good":""}">${esc(c.status)}</span>
+    <div>${esc(c.note||"No note")}</div>
+    <div class="muted">${esc(c.created_at||"")}</div>
+    ${isAdmin()?`<div class="row" style="margin-top:8px"><button class="gold" onclick="setChallengeStatus(${c.id},'approved')">Approve</button><button class="red" onclick="setChallengeStatus(${c.id},'rejected')">Reject</button><button class="green" onclick="convertChallenge(${c.id})">Convert To Fight</button></div>`:""}
+  </div>`;
+}
+
 function picks(){
   const open = (STATE.fights||[]).filter(f=>["live","scheduled"].includes(f.status));
   return `<div class="card hero"><h3>Fun Picks</h3><span class="pill">Your points: ${STATE.user?STATE.user.prediction_points:"Login needed"}</span></div><div class="grid wide" style="margin-top:10px">${open.map(f=>fightCard(f,true)).join("") || `<div class="empty">No open fights.</div>`}</div>`;
@@ -233,13 +447,304 @@ function leaderboard(){
   return `<div class="grid wide"><div class="card"><h3>Prediction Points</h3>${(STATE.leaderboard||[]).map((u,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(u.name)}</b> — ${u.prediction_points} pts</div>`).join("") || `<div class="empty">None yet.</div>`}</div><div class="card"><h3>Fighter Rank</h3>${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${f.rank_points}</div>`).join("") || `<div class="empty">None yet.</div>`}</div></div>`;
 }
 
+function tournamentEntries(tid){return (STATE.tournament_entries||[]).filter(e=>Number(e.tournament_id)===Number(tid));}
 function tournaments(){
-  return `<div class="card hero"><h3>Brackets</h3></div>${isAdmin()?`<div class="grid wide" style="margin-top:10px"><div class="card"><h3>Create Tournament</h3><select id="tourEvent">${eventOptions()}</select><input id="tourTitle" placeholder="Title"><select id="tourFormat"><option value="single_elim">Single Elim</option><option value="king_hill">King of the Hill</option><option value="round_robin">Round Robin</option></select><input id="tourNotes" placeholder="Notes"><button class="green" onclick="createTournament()">Create</button></div></div>`:""}<div class="grid wide" style="margin-top:10px">${(STATE.tournaments||[]).map(t=>`<div class="card"><h3>${esc(t.title)}</h3><span class="pill warn">${esc(t.status)}</span><div class="muted">${esc(t.format)} • ${esc(t.notes||"")}</div></div>`).join("") || `<div class="empty">No tournaments yet.</div>`}</div>`;
+  return `
+    <div class="card hero"><h3>Brackets</h3><p class="muted">Create tournaments and add fighters into brackets.</p></div>
+    ${isAdmin()?`
+      <div class="admin-grid" style="margin-top:10px">
+        <div class="card"><h3>Create Tournament</h3><select id="tourEvent">${eventOptions()}</select><input id="tourTitle" placeholder="Title"><select id="tourFormat"><option value="single_elim">Single Elim</option><option value="king_hill">King of the Hill</option><option value="round_robin">Round Robin</option><option value="faction_vs_faction">Faction vs Faction</option></select><input id="tourNotes" placeholder="Notes/theme"><button class="green" onclick="createTournament()">Create Tournament</button></div>
+        <div class="card"><h3>Add Fighter To Bracket</h3><select id="entryTour">${tournamentOptions()}</select><select id="entryFighter">${fighterOptions("Choose fighter")}</select><input id="entrySeed" type="number" placeholder="Seed number"><button class="green" onclick="addTournamentEntry()">Add Entry</button></div>
+        <div class="card"><h3>Generate Round 1</h3><select id="genTour">${tournamentOptions()}</select><input id="genRound" placeholder="Round name" value="Round 1"><input id="genRules" placeholder="Rules for generated fights"><input id="genStart" placeholder="Start time for generated fights"><input id="genSpectate" placeholder="Shared spectate/watch link optional"><button class="gold" onclick="generateTournament()">Generate Fights</button><div class="muted">Pairs fighters by seed/order: 1 vs 2, 3 vs 4, etc. Odd fighter gets a bye.</div></div>
+        <div class="card"><h3>Generate Next Round</h3><select id="nextTour">${tournamentOptions()}</select><input id="nextRound" placeholder="Round name" value="Semi Finals"><input id="nextRules" placeholder="Rules for next round"><input id="nextStart" placeholder="Start time"><input id="nextSpectate" placeholder="Shared spectate/watch link optional"><button class="gold" onclick="generateNextRound()">Generate Next Round</button><div class="muted">Uses winners from completed tournament fights. All current fights must be done/cancelled.</div></div>
+      </div>`:""}
+    <div class="grid wide" style="margin-top:10px">
+      ${(STATE.tournaments||[]).map(t=>`<div class="card"><div class="between"><h3>${esc(t.title)}</h3><span class="pill warn">${esc(t.status)}</span></div><div class="muted">${esc(t.format)} • ${esc(t.notes||"")} • Fights ${(STATE.fights||[]).filter(f=>Number(f.tournament_id)===Number(t.id)).length}</div><h3 style="margin-top:8px">Entries</h3>${tournamentEntries(t.id).map(e=>`<div class="mini">Seed ${esc(e.seed||"-")} — ${esc(e.nickname||e.name)} [${esc(e.torn_id)}]</div>`).join("") || `<div class="empty">No entries yet.</div>`}<h3 style="margin-top:8px">Bracket View</h3>${bracketView(t)}</div>`).join("") || `<div class="empty">No tournaments yet.</div>`}
+    </div>
+  `;
 }
 
-function belts(){return `<div class="card hero"><h3>Belts</h3></div><div class="grid wide" style="margin-top:10px">${(STATE.belts||[]).map(b=>`<div class="card belt"><h3>${esc(b.name)}</h3><div>${b.holder_fighter_id?"Holder: "+esc(b.holder_nick||b.holder_name):"Vacant"}</div></div>`).join("") || `<div class="empty">No belts yet.</div>`}</div>`;}
-function teams(){return `<div class="card hero"><h3>Teams</h3></div><div class="grid wide" style="margin-top:10px">${(STATE.teams||[]).map(t=>`<div class="card"><h3>${esc(t.name)}</h3><div>${esc(t.notes||"")}</div></div>`).join("") || `<div class="empty">No teams yet.</div>`}</div>`;}
-function refs(){return `<div class="card hero"><h3>Refs</h3></div><div class="grid wide" style="margin-top:10px">${(STATE.referees||[]).map(r=>`<div class="card ref"><h3>${esc(r.name)}</h3><div>${esc(r.notes||"")}</div></div>`).join("") || `<div class="empty">No refs yet.</div>`}</div>`;}
+function belts(){
+  return `
+    <div class="card hero"><h3>Belts</h3><p class="muted">Create and assign championship belts.</p></div>
+    ${isAdmin()?`
+      <div class="admin-grid" style="margin-top:10px">
+        <div class="card belt"><h3>Create Belt</h3><input id="beltName" placeholder="Belt name, e.g. Pillowweight Champion"><input id="beltDivision" placeholder="Division, e.g. Open Chaos"><select id="beltHolder">${fighterOptions("Optional starting holder")}</select><button class="green" onclick="createBelt()">Create Belt</button></div>
+        <div class="card belt"><h3>Assign Belt</h3><select id="assignBelt">${beltOptions()}</select><select id="assignHolder">${fighterOptions("New holder")}</select><input id="assignNote" placeholder="Note, e.g. Won main event"><button class="gold" onclick="assignBelt()">Assign Belt</button></div>
+      </div>`:""}
+    <div class="grid wide" style="margin-top:10px">
+      ${(STATE.belts||[]).map(b=>`<div class="card belt"><h3>👑 ${esc(b.name)}</h3><div class="muted">${esc(b.division||"Open")}</div><div>${b.holder_fighter_id?"Holder: <b>"+esc(b.holder_nick||b.holder_name)+"</b>":"Vacant"}</div><span class="pill">History ${(b.history||[]).length}</span></div>`).join("") || `<div class="empty">No belts yet.</div>`}
+    </div>
+  `;
+}
+
+function teams(){
+  return `
+    <div class="card hero"><h3>Teams</h3><p class="muted">Create team/faction entries for group events.</p></div>
+    ${isAdmin()?`
+      <div class="admin-grid" style="margin-top:10px">
+        <div class="card team"><h3>Create Team</h3><select id="teamEvent">${eventOptions()}</select><input id="teamName" placeholder="Team / faction name"><input id="teamCaptain" placeholder="Captain Torn ID"><input id="teamMembers" placeholder="Members, comma separated"><input id="teamNotes" placeholder="Notes"><button class="green" onclick="createTeam()">Create Team</button></div>
+      </div>`:""}
+    <div class="grid wide" style="margin-top:10px">
+      ${(STATE.teams||[]).map(t=>`<div class="card team"><h3>⚔️ ${esc(t.name)}</h3><div class="muted">Captain ${esc(t.captain_torn_id||"unset")}</div><div>${esc(t.notes||"")}</div>${(t.members||[]).map(m=>`<span class="pill">${esc(m)}</span>`).join("")}</div>`).join("") || `<div class="empty">No teams yet.</div>`}
+    </div>
+  `;
+}
+
+function refs(){
+  return `
+    <div class="card hero">
+      <h3>Refs</h3>
+      <p class="muted">Add referees and use fight checklists to confirm the match was run properly.</p>
+    </div>
+
+    ${isAdmin()?`
+      <div class="admin-grid" style="margin-top:10px">
+        <div class="card ref"><h3>Add Referee</h3><select id="refEvent">${eventOptions()}</select><input id="refName" placeholder="Referee name"><input id="refTorn" placeholder="Torn ID optional"><input id="refNotes" placeholder="Notes / duties"><button class="green" onclick="createRef()">Add Ref</button></div>
+        <div class="card ref"><h3>Fight Ref Checklist</h3><select id="checkFight" onchange="loadChecklistForm()">${fightOptions()}</select><div id="checkForm">${checklistFormHtml(null)}</div></div>
+        <div class="card ref"><h3>Fight Proof / Report Links</h3><select id="proofFight" onchange="loadProofBox()">${fightOptions()}</select><select id="proofType"><option value="battle_report">Battle report</option><option value="screenshot">Screenshot</option><option value="spectate">Spectate/watch</option><option value="note">Ref note</option><option value="dispute">Dispute note</option></select><input id="proofTitle" placeholder="Proof title"><input id="proofUrl" placeholder="Proof/report/screenshot URL optional"><textarea id="proofNotes" placeholder="Notes / reason / proof details"></textarea><button class="green" onclick="addProof()">Add Proof</button><div id="proofBox">${proofListHtml(0,true)}</div></div>
+      </div>`:""}
+
+    <div class="grid wide" style="margin-top:10px">
+      ${(STATE.referees||[]).map(r=>`<div class="card ref"><h3>⚖️ ${esc(r.name)}</h3><div class="muted">Torn ID ${esc(r.torn_id||"unset")} • ${esc(r.status||"active")}</div><div>${esc(r.notes||"")}</div></div>`).join("") || `<div class="empty">No refs yet.</div>`}
+    </div>
+
+    <div class="section-title">Fight Checklist Status</div>
+    <div class="grid wide">
+      ${(STATE.fights||[]).map(f=>`<div class="card"><h3>${esc(f.round_name||"Fight")} <span class="pill">ID ${f.id}</span></h3><div>${esc(f.fighter_a_nick||f.fighter_a_name||"A")} vs ${esc(f.fighter_b_nick||f.fighter_b_name||"B")}</div>${checklistSummary(f.id)}${proofSummary(f.id)}<div class="muted">${esc((checklistForFight(f.id).notes)||"No ref notes yet.")}</div><div style="margin-top:8px">${proofListHtml(f.id,false)}</div></div>`).join("") || `<div class="empty">No fights yet.</div>`}
+    </div>
+  `;
+}
+
+function checklistFormHtml(fightId){
+  if(!fightId) return `<div class="empty">Choose a fight to load checklist.</div>`;
+  const c = checklistForFight(fightId);
+  return `
+    <div class="grid" style="grid-template-columns:1fr">
+      ${checkbox("chkBothShowed","Both fighters showed up", Number(c.both_showed||0)===1)}
+      ${checkbox("chkRules","Rules/loadout confirmed", Number(c.rules_confirmed||0)===1)}
+      ${checkbox("chkStarted","Fight started", Number(c.fight_started||0)===1)}
+      ${checkbox("chkWinner","Winner confirmed", Number(c.winner_confirmed||0)===1)}
+      ${checkbox("chkMethod","Result method confirmed", Number(c.method_confirmed||0)===1)}
+      <textarea id="chkNotes" placeholder="Ref notes / proof / links">${esc(c.notes||"")}</textarea>
+      <button class="gold" onclick="saveChecklist()">Save Checklist</button>
+    </div>
+  `;
+}
+
+function loadChecklistForm(){
+  const id = $("checkFight").value;
+  $("checkForm").innerHTML = checklistFormHtml(id);
+}
+
+
+function copyAnnouncement(){
+  const box = $("announceOutput");
+  if(!box){toast("Nothing to copy.");return;}
+  box.focus();
+  box.select();
+  try{
+    navigator.clipboard.writeText(box.value);
+    toast("Announcement copied.");
+  }catch(e){
+    document.execCommand("copy");
+    toast("Announcement copied.");
+  }
+}
+
+function fightAnnouncementText(f){
+  if(!f) return "No fight selected.";
+  const a = f.fighter_a_nick || f.fighter_a_name || "Fighter A";
+  const b = f.fighter_b_nick || f.fighter_b_name || "Fighter B";
+  const spectate = f.spectate_url ? "\n👀 Spectate: " + f.spectate_url : "";
+  return `@everyone 🥊🔥
+
+WELCOME TO THE TORN FIGHT CLUB
+
+NEXT FIGHT:
+${a} VS ${b}
+
+📋 Match: ${f.round_name || "Fight Card"}
+🎭 Rules: ${f.rule_set || "Chaos rules"}
+⏰ Start: ${f.starts_at || "TBA"}
+💰 Fun odds: ${f.odds_a || "1.9"} / ${f.odds_b || "1.9"}${spectate}
+
+No real Torn money/items betting.
+Prediction points only.
+First rule of Fight Club...
+
+You ABSOLUTELY talk about Fight Club.`;
+}
+
+function winnerAnnouncementText(f){
+  if(!f) return "No fight selected.";
+  const a = f.fighter_a_nick || f.fighter_a_name || "Fighter A";
+  const b = f.fighter_b_nick || f.fighter_b_name || "Fighter B";
+  const winner = f.winner_fighter_id ? fighterName(f.winner_fighter_id) : "Winner not set yet";
+  return `@everyone 🏆🥊
+
+TORN FIGHT CLUB RESULT
+
+${a} VS ${b}
+
+👑 Winner: ${winner}
+💀 Result Method: ${f.result_method || "TBA"}
+📋 Match: ${f.round_name || "Fight Card"}
+🎭 Rules: ${f.rule_set || "Chaos rules"}
+
+Respect to both fighters for entering the arena.
+
+First rule of Fight Club...
+You ABSOLUTELY talk about Fight Club.`;
+}
+
+function tournamentAnnouncementText(t){
+  if(!t) return "No tournament selected.";
+  const entries = (STATE.tournament_entries||[]).filter(e=>Number(e.tournament_id)===Number(t.id));
+  const list = entries.length ? entries.map((e,i)=>`${i+1}. ${e.nickname || e.name} [${e.torn_id}]`).join("\n") : "No fighters entered yet.";
+  return `@everyone 🏆🥊
+
+TORN FIGHT CLUB TOURNAMENT
+
+📛 Tournament: ${t.title}
+🎭 Format: ${t.format || "Chaos bracket"}
+📋 Status: ${t.status || "planned"}
+📝 Notes: ${t.notes || "No notes yet."}
+
+FIGHTERS:
+${list}
+
+Who is walking out with bragging rights?
+
+First rule of Fight Club...
+You ABSOLUTELY talk about Fight Club.`;
+}
+
+function beltAnnouncementText(b){
+  if(!b) return "No belt selected.";
+  const holder = b.holder_fighter_id ? `${b.holder_nick || b.holder_name} [${b.holder_torn_id || ""}]` : "Vacant";
+  return `@everyone 👑🥊
+
+TORN FIGHT CLUB CHAMPIONSHIP BELT
+
+🏆 Belt: ${b.name}
+🎭 Division: ${b.division || "Open Chaos"}
+👑 Current Holder: ${holder}
+
+This belt is now officially part of Fight Club history.
+
+Challenge them.
+Call them out.
+Make it chaotic.
+
+First rule of Fight Club...
+You ABSOLUTELY talk about Fight Club.`;
+}
+
+function recruitmentAnnouncementText(){
+  return `@everyone 🥊🔥
+
+WELCOME TO THE IDEA OF...
+
+THE TORN FIGHT CLUB
+
+Not just another tournament.
+Not just another betting game.
+
+A community-run underground fight league built for entertainment, chaos, rivalries, rankings, and stupidly funny loadouts.
+
+Looking for:
+🥊 Fighters
+📋 Organizers
+⚖️ Referees
+😂 People with dumb/funny ideas
+👀 Spectators
+
+Fight ideas:
+🛏️ Pillow fight championships
+⚔️ Only melee nights
+🎲 Randomized gear battles
+👑 King of the Hill
+💀 Last Man Standing
+🏆 Championship belts
+⚔️ Faction vs faction events
+
+No real Torn money/items betting through the app.
+Prediction points only.
+
+If you would join, reply or DM.
+
+First rule of Fight Club...
+You ABSOLUTELY talk about Fight Club.`;
+}
+
+function updateAnnouncement(){
+  const type = $("announceType").value;
+  let text = "";
+  if(type === "fight"){
+    const f = (STATE.fights||[]).find(x=>Number(x.id)===Number($("announceFight").value));
+    text = fightAnnouncementText(f);
+  } else if(type === "winner"){
+    const f = (STATE.fights||[]).find(x=>Number(x.id)===Number($("announceFight").value));
+    text = winnerAnnouncementText(f);
+  } else if(type === "tournament"){
+    const t = (STATE.tournaments||[]).find(x=>Number(x.id)===Number($("announceTournament").value));
+    text = tournamentAnnouncementText(t);
+  } else if(type === "belt"){
+    const b = (STATE.belts||[]).find(x=>Number(x.id)===Number($("announceBelt").value));
+    text = beltAnnouncementText(b);
+  } else {
+    text = recruitmentAnnouncementText();
+  }
+  $("announceOutput").value = text;
+}
+
+function announcements(){
+  return `
+    <div class="card hero">
+      <h3>📣 Announcement Generator</h3>
+      <p class="muted">Create copy/paste posts for Discord, faction chat, Torn forums, or wherever you are hyping the next fight.</p>
+      <span class="pill good">Fight cards</span>
+      <span class="pill good">Winner posts</span>
+      <span class="pill good">Belt posts</span>
+      <span class="pill good">Tournament posts</span>
+      <span class="pill good">Recruitment posts</span>
+    </div>
+
+    <div class="grid wide" style="margin-top:10px">
+      <div class="card">
+        <h3>Build Post</h3>
+        <select id="announceType" onchange="updateAnnouncement()">
+          <option value="fight">Upcoming fight post</option>
+          <option value="winner">Winner/result post</option>
+          <option value="tournament">Tournament/bracket post</option>
+          <option value="belt">Belt announcement</option>
+          <option value="recruit">Recruitment / welcome post</option>
+        </select>
+
+        <label class="muted">Fight</label>
+        <select id="announceFight" onchange="updateAnnouncement()">${fightOptions()}</select>
+
+        <label class="muted">Tournament</label>
+        <select id="announceTournament" onchange="updateAnnouncement()">${tournamentOptions()}</select>
+
+        <label class="muted">Belt</label>
+        <select id="announceBelt" onchange="updateAnnouncement()">${beltOptions()}</select>
+
+        <button class="gold" onclick="updateAnnouncement()">Generate</button>
+        <button class="green" onclick="copyAnnouncement()">Copy Post</button>
+      </div>
+
+      <div class="card">
+        <h3>Post Preview</h3>
+        <textarea id="announceOutput" style="min-height:360px"></textarea>
+      </div>
+    </div>
+
+    <script>setTimeout(updateAnnouncement,50);<\/script>
+  `;
+}
+
 
 function ideas(){
   return `<div class="card hero"><h3>Ideas</h3>${STATE.user?`<textarea id="idea" placeholder="Drop a cursed fight idea..."></textarea><button class="green" onclick="submitIdea()">Submit</button>`:`<div class="empty">Login to submit.</div>`}</div><div class="grid wide" style="margin-top:10px">${(STATE.ideas||[]).map(i=>`<div class="card"><b>${esc(i.name||"Someone")}</b><p>${esc(i.idea)}</p></div>`).join("") || `<div class="empty">No ideas yet.</div>`}</div>`;
@@ -254,7 +759,57 @@ function settings(){
 }
 
 function admin(){
-  return `<div class="grid wide"><div class="card hero"><h3>Admin</h3></div><div class="card"><h3>Create Event</h3><input id="evTitle" placeholder="Title"><input id="evTheme" placeholder="Theme"><input id="evStart" placeholder="Start"><button class="green" onclick="createEvent()">Create</button></div><div class="card"><h3>Create Fight</h3><select id="fightEvent">${eventOptions()}</select><select id="fighterA">${fighterOptions("Fighter A")}</select><select id="fighterB">${fighterOptions("Fighter B")}</select><input id="roundName" placeholder="Round"><input id="fightRules" placeholder="Rules"><input id="startTime" placeholder="Start"><input id="oddsA" value="1.9"><input id="oddsB" value="1.9"><button class="green" onclick="createFight()">Create</button></div><div class="card"><h3>Status</h3><select id="statusFight">${fightOptions()}</select><select id="statusVal"><option>scheduled</option><option>live</option><option>done</option><option>cancelled</option></select><button class="gold" onclick="setFightStatus()">Save</button></div><div class="card"><h3>Result</h3><select id="resFight">${fightOptions()}</select><select id="resWinner">${fighterOptions("Winner")}</select><input id="resMethod" placeholder="KO / Lowest HP / Surrender"><button class="red" onclick="saveResult()">Save</button></div></div>`;
+  return `
+    <div class="card hero">
+      <h3>Admin Control Center</h3>
+      <p class="muted">Create, edit, delete, and manage the entire Fight Club app.</p>
+      <div class="row"><button onclick="setTab('tournaments')">Brackets</button><button onclick="setTab('belts')">Belts</button><button onclick="setTab('teams')">Teams</button><button onclick="setTab('refs')">Refs / Checklists</button></div>
+    </div>
+
+    <div class="section-title">Events</div>
+    <div class="admin-grid">
+      <div class="card"><h3>Create Event</h3><input id="evTitle" placeholder="Title"><input id="evTheme" placeholder="Theme"><input id="evStart" placeholder="Start"><button class="green" onclick="createEvent()">Create</button></div>
+      <div class="card"><h3>Edit / Delete Event</h3><select id="editEvent">${eventEditOptions()}</select><input id="editEventTitle" placeholder="New title"><input id="editEventTheme" placeholder="New theme"><input id="editEventStart" placeholder="New start"><select id="editEventStatus"><option value="">Leave status</option><option value="planned">Planned</option><option value="open">Open</option><option value="live">Live</option><option value="done">Done</option><option value="cancelled">Cancelled</option></select><button class="gold" onclick="updateEvent()">Save Event</button><button class="red" onclick="deleteEvent()">Delete Event</button></div>
+    </div>
+
+    <div class="section-title">Fights</div>
+    <div class="admin-grid">
+      <div class="card"><h3>Create Fight</h3><select id="fightEvent">${eventOptions()}</select><select id="fighterA">${fighterOptions("Fighter A")}</select><select id="fighterB">${fighterOptions("Fighter B")}</select><input id="roundName" placeholder="Round"><input id="fightRules" placeholder="Rules"><input id="startTime" placeholder="Start"><input id="spectateUrl" placeholder="Spectate link optional"><input id="oddsA" value="1.9"><input id="oddsB" value="1.9"><button class="green" onclick="createFight()">Create</button></div>
+      <div class="card"><h3>Edit / Delete Fight</h3><select id="editFight">${fightOptions()}</select><input id="editRound" placeholder="New round name"><input id="editRules" placeholder="New rules"><input id="editStart" placeholder="New start"><input id="editSpectate" placeholder="New spectate link"><button class="gold" onclick="updateFight()">Save Fight</button><button class="red" onclick="deleteFight()">Delete Fight</button></div>
+      <div class="card"><h3>Set Status</h3><select id="statusFight">${fightOptions()}</select><select id="statusVal"><option>scheduled</option><option>live</option><option>done</option><option>cancelled</option></select><button class="gold" onclick="setFightStatus()">Save</button></div>
+      <div class="card"><h3>Save Result</h3><select id="resFight">${fightOptions()}</select><select id="resWinner">${fighterOptions("Winner")}</select><input id="resMethod" placeholder="KO / Lowest HP / Surrender"><button class="red" onclick="saveResult()">Save</button></div>
+    </div>
+
+    <div class="section-title">Fighters</div>
+    <div class="admin-grid">
+      <div class="card"><h3>Edit / Remove Fighter</h3><select id="editFighter">${fighterOptions("Choose fighter")}</select><input id="editNick" placeholder="Nickname"><input id="editRange" placeholder="Stats range"><input id="editLoadout" placeholder="Loadout"><input id="editRank" type="number" placeholder="Rank points"><input id="editW" type="number" placeholder="Wins"><input id="editL" type="number" placeholder="Losses"><button class="gold" onclick="updateFighter()">Save Fighter</button><button class="red" onclick="deleteFighter()">Remove Fighter</button></div>
+    </div>
+
+    <div class="section-title">Belts</div>
+    <div class="admin-grid">
+      <div class="card belt"><h3>Edit / Delete Belt</h3><select id="editBelt">${beltOptions()}</select><input id="editBeltName" placeholder="Belt name"><input id="editBeltDivision" placeholder="Division"><select id="editBeltHolder">${fighterOptions("Holder / vacant")}</select><select id="editBeltStatus"><option value="">Leave status</option><option value="active">Active</option><option value="retired">Retired</option><option value="vacant">Vacant</option></select><button class="gold" onclick="updateBelt()">Save Belt</button><button class="red" onclick="deleteBelt()">Delete Belt</button></div>
+    </div>
+
+    <div class="section-title">Teams</div>
+    <div class="admin-grid">
+      <div class="card team"><h3>Edit / Delete Team</h3><select id="editTeam">${teamOptions()}</select><input id="editTeamName" placeholder="Team name"><input id="editTeamCaptain" placeholder="Captain Torn ID"><input id="editTeamMembers" placeholder="Members comma separated"><input id="editTeamNotes" placeholder="Notes"><button class="gold" onclick="updateTeam()">Save Team</button><button class="red" onclick="deleteTeam()">Delete Team</button></div>
+    </div>
+
+    <div class="section-title">Refs</div>
+    <div class="admin-grid">
+      <div class="card ref"><h3>Edit / Delete Ref</h3><select id="editRef">${refOptions()}</select><input id="editRefName" placeholder="Ref name"><input id="editRefTorn" placeholder="Torn ID"><select id="editRefStatus"><option value="">Leave status</option><option value="active">Active</option><option value="inactive">Inactive</option></select><input id="editRefNotes" placeholder="Notes"><button class="gold" onclick="updateRef()">Save Ref</button><button class="red" onclick="deleteRef()">Delete Ref</button></div>
+    </div>
+
+    <div class="section-title">Alerts / Notifications</div>
+    <div class="admin-grid">
+      <div class="card"><h3>Create Alert</h3><input id="alertTitle" placeholder="Alert title"><input id="alertBody" placeholder="Alert body"><select id="alertType"><option value="info">Info</option><option value="fight">Fight</option><option value="tournament">Tournament</option><option value="result">Result</option></select><button class="green" onclick="createAlert()">Create Alert</button></div>
+    </div>
+
+    <div class="section-title">Fun Point Adjustments</div>
+    <div class="admin-grid">
+      <div class="card"><h3>Adjust Points</h3><input id="pointsUser" placeholder="User Torn ID"><input id="pointsAmount" type="number" placeholder="+/- amount"><input id="pointsReason" placeholder="Reason"><button class="green" onclick="adjustPoints()">Adjust Points</button></div>
+    </div>
+  `;
 }
 
 async function login(){
@@ -274,10 +829,190 @@ function registerFighter(){action("/api/fighters/register",{event_id:$("regEvent
 function submitIdea(){action("/api/ideas",{idea:$("idea").value},"Submitted.");}
 function makePick(fight,pick){action("/api/predictions",{fight_id:fight,pick_fighter_id:pick,points:$("pts-"+fight).value},"Pick saved.");}
 function createEvent(){action("/api/admin/events",{title:$("evTitle").value,theme:$("evTheme").value,starts_at:$("evStart").value},"Event created.");}
-function createFight(){action("/api/admin/fights",{event_id:$("fightEvent").value,fighter_a_id:$("fighterA").value,fighter_b_id:$("fighterB").value,round_name:$("roundName").value,rule_set:$("fightRules").value,starts_at:$("startTime").value,odds_a:$("oddsA").value,odds_b:$("oddsB").value},"Fight created.");}
+function createFight(){action("/api/admin/fights",{event_id:$("fightEvent").value,fighter_a_id:$("fighterA").value,fighter_b_id:$("fighterB").value,round_name:$("roundName").value,rule_set:$("fightRules").value,starts_at:$("startTime").value,odds_a:$("oddsA").value,odds_b:$("oddsB").value,spectate_url:$("spectateUrl")?$("spectateUrl").value:""},"Fight created.");}
 function setFightStatus(){action("/api/admin/fights/"+$("statusFight").value+"/status",{status:$("statusVal").value},"Status saved.");}
 function saveResult(){action("/api/admin/fights/"+$("resFight").value+"/result",{winner_fighter_id:$("resWinner").value,result_method:$("resMethod").value},"Result saved.");}
 function createTournament(){action("/api/admin/tournaments",{event_id:$("tourEvent").value,title:$("tourTitle").value,format:$("tourFormat").value,notes:$("tourNotes").value},"Tournament created.");}
+function addTournamentEntry(){action("/api/admin/tournaments/"+$("entryTour").value+"/entries",{fighter_id:$("entryFighter").value,seed:$("entrySeed").value||0},"Entry added.");}
+function generateTournament(){
+  if(!confirm("Generate scheduled fights from this bracket? This should only be done once per tournament round.")) return;
+  action("/api/admin/tournaments/"+$("genTour").value+"/generate",{
+    round_name:$("genRound").value,
+    rule_set:$("genRules").value,
+    starts_at:$("genStart").value,
+    spectate_url:$("genSpectate").value
+  },"Tournament fights generated.");
+}
+function generateNextRound(){
+  if(!confirm("Generate next round using winners from completed fights?")) return;
+  action("/api/admin/tournaments/"+$("nextTour").value+"/generate-next",{
+    round_name:$("nextRound").value,
+    rule_set:$("nextRules").value,
+    starts_at:$("nextStart").value,
+    spectate_url:$("nextSpectate").value
+  },"Next round generated.");
+}
+function createBelt(){action("/api/admin/belts",{name:$("beltName").value,division:$("beltDivision").value,holder_fighter_id:$("beltHolder").value||null},"Belt created.");}
+function assignBelt(){action("/api/admin/belts/"+$("assignBelt").value+"/assign",{holder_fighter_id:$("assignHolder").value,note:$("assignNote").value},"Belt assigned.");}
+function createTeam(){action("/api/admin/teams",{event_id:$("teamEvent").value,name:$("teamName").value,captain_torn_id:$("teamCaptain").value,members:$("teamMembers").value,notes:$("teamNotes").value},"Team created.");}
+function createRef(){action("/api/admin/referees",{event_id:$("refEvent").value,name:$("refName").value,torn_id:$("refTorn").value,notes:$("refNotes").value},"Ref added.");}
+function saveChecklist(){
+  const fightId = $("checkFight").value;
+  if(!fightId){toast("Choose a fight first.");return;}
+  action("/api/admin/fights/"+fightId+"/checklist",{
+    both_showed:$("chkBothShowed").checked,
+    rules_confirmed:$("chkRules").checked,
+    fight_started:$("chkStarted").checked,
+    winner_confirmed:$("chkWinner").checked,
+    method_confirmed:$("chkMethod").checked,
+    notes:$("chkNotes").value
+  },"Checklist saved.");
+}
+function loadProofBox(){
+  const id = $("proofFight").value || 0;
+  $("proofBox").innerHTML = proofListHtml(id,true);
+}
+function addProof(){
+  const fightId = $("proofFight").value;
+  if(!fightId){toast("Choose a fight first.");return;}
+  action("/api/admin/fights/"+fightId+"/proofs",{
+    proof_type:$("proofType").value,
+    title:$("proofTitle").value,
+    url:$("proofUrl").value,
+    notes:$("proofNotes").value
+  },"Proof saved.");
+}
+function deleteProof(id){
+  if(!confirm("Delete this proof/report entry?")) return;
+  action("/api/admin/proofs/"+id+"/delete",{},"Proof deleted.");
+}
+function adjustPoints(){action("/api/admin/points/adjust",{torn_id:$("pointsUser").value,amount:$("pointsAmount").value,reason:$("pointsReason").value},"Points adjusted.");}
+
+
+function updateEvent(){
+  const id = $("editEvent").value;
+  if(!id){toast("Choose an event.");return;}
+  action("/api/admin/events/"+id+"/update",{
+    title:$("editEventTitle").value,
+    theme:$("editEventTheme").value,
+    starts_at:$("editEventStart").value,
+    status:$("editEventStatus").value
+  },"Event updated.");
+}
+function deleteEvent(){
+  const id = $("editEvent").value;
+  if(!id || !confirm("Delete this event? Fights may still remain.")) return;
+  action("/api/admin/events/"+id+"/delete",{},"Event deleted.");
+}
+function updateFight(){
+  const id = $("editFight").value;
+  if(!id){toast("Choose a fight.");return;}
+  action("/api/admin/fights/"+id+"/update",{
+    round_name:$("editRound").value,
+    rule_set:$("editRules").value,
+    starts_at:$("editStart").value,
+    spectate_url:$("editSpectate").value
+  },"Fight updated.");
+}
+function deleteFight(){
+  const id = $("editFight").value;
+  if(!id || !confirm("Delete this fight and its picks?")) return;
+  action("/api/admin/fights/"+id+"/delete",{},"Fight deleted.");
+}
+function updateFighter(){
+  const id = $("editFighter").value;
+  if(!id){toast("Choose a fighter.");return;}
+  action("/api/admin/fighters/"+id+"/update",{
+    nickname:$("editNick").value,
+    stats_range:$("editRange").value,
+    loadout:$("editLoadout").value,
+    rank_points:$("editRank").value,
+    record_w:$("editW").value,
+    record_l:$("editL").value
+  },"Fighter updated.");
+}
+function deleteFighter(){
+  const id = $("editFighter").value;
+  if(!id || !confirm("Remove this fighter from active list?")) return;
+  action("/api/admin/fighters/"+id+"/delete",{},"Fighter removed.");
+}
+function updateBelt(){
+  const id = $("editBelt").value;
+  if(!id){toast("Choose a belt.");return;}
+  action("/api/admin/belts/"+id+"/update",{
+    name:$("editBeltName").value,
+    division:$("editBeltDivision").value,
+    holder_fighter_id:$("editBeltHolder").value,
+    status:$("editBeltStatus").value
+  },"Belt updated.");
+}
+function deleteBelt(){
+  const id = $("editBelt").value;
+  if(!id || !confirm("Delete this belt?")) return;
+  action("/api/admin/belts/"+id+"/delete",{},"Belt deleted.");
+}
+function updateTeam(){
+  const id = $("editTeam").value;
+  if(!id){toast("Choose a team.");return;}
+  action("/api/admin/teams/"+id+"/update",{
+    name:$("editTeamName").value,
+    captain_torn_id:$("editTeamCaptain").value,
+    members:$("editTeamMembers").value,
+    notes:$("editTeamNotes").value
+  },"Team updated.");
+}
+function deleteTeam(){
+  const id = $("editTeam").value;
+  if(!id || !confirm("Delete this team?")) return;
+  action("/api/admin/teams/"+id+"/delete",{},"Team deleted.");
+}
+function updateRef(){
+  const id = $("editRef").value;
+  if(!id){toast("Choose a ref.");return;}
+  action("/api/admin/referees/"+id+"/update",{
+    name:$("editRefName").value,
+    torn_id:$("editRefTorn").value,
+    status:$("editRefStatus").value,
+    notes:$("editRefNotes").value
+  },"Ref updated.");
+}
+function deleteRef(){
+  const id = $("editRef").value;
+  if(!id || !confirm("Delete this ref?")) return;
+  action("/api/admin/referees/"+id+"/delete",{},"Ref deleted.");
+}
+
+
+function createChallenge(){
+  action("/api/challenges",{
+    challenger_fighter_id:$("challengeMine").value,
+    target_fighter_id:$("challengeTarget").value,
+    note:$("challengeNote").value
+  },"Challenge sent.");
+}
+function setChallengeStatus(id,status){
+  action("/api/admin/challenges/"+id+"/status",{status},"Challenge updated.");
+}
+function convertChallenge(id){
+  const eventId = prompt("Event ID for this fight:", (STATE.events[0]&&STATE.events[0].id)||1);
+  if(!eventId) return;
+  const round = prompt("Round name:", "Challenge Fight") || "Challenge Fight";
+  const rules = prompt("Rules:", "Challenge match chaos rules") || "Challenge match chaos rules";
+  action("/api/admin/challenges/"+id+"/convert",{
+    event_id:eventId,
+    round_name:round,
+    rule_set:rules,
+    starts_at:"",
+    spectate_url:""
+  },"Challenge converted into fight.");
+}
+function createAlert(){
+  action("/api/admin/alerts",{
+    title:$("alertTitle").value,
+    body:$("alertBody").value,
+    alert_type:$("alertType").value
+  },"Alert created.");
+}
 
 render();
 refresh();
