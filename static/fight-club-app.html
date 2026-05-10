@@ -107,7 +107,7 @@ let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
   ok: true, user: null, events: [], fighters: [], fights: [], ideas: [], leaderboard: [],
-  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
+  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], reward_slots:[], reward_requests:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
 };
 
 const ADMINS = [3679030, 1905671];
@@ -155,7 +155,7 @@ function normalizeState(data){
     ok:true, user:null, events:[], fighters:[], fights:[], ideas:[], leaderboard:[],
     my_predictions:[], my_notifications:[], tournaments:[], tournament_entries:[],
     belts:[], teams:[], referees:[], audit:[], ref_checklists:[], fight_proofs:[],
-    challenges:[], alerts:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[]
+    challenges:[], alerts:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[]
   };
   return Object.assign(defaults, data);
 }
@@ -172,9 +172,9 @@ async function refresh(){
 }
 
 function renderTabs(){
-  const tabs = ["overview","notifications","fightcard","fighters","myfighter","challenges","points","picks","leaderboard","belts","refs","ideas","rules","settings"];
+  const tabs = ["overview","notifications","fightcard","fighters","myfighter","challenges","points","exchange","picks","leaderboard","belts","refs","ideas","rules","settings"];
   if(isAdmin()){ tabs.push("announcements"); tabs.push("admin"); }
-  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fighters:"Fighters",myfighter:"My Fighter",challenges:"Challenges",points:"Points",picks:"Picks",leaderboard:"Ranks",belts:"Belts",refs:"Refs",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
+  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fighters:"Fighters",myfighter:"My Fighter",challenges:"Challenges",points:"Points",exchange:"Exchange",picks:"Picks",leaderboard:"Ranks",belts:"Belts",refs:"Refs",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
 
@@ -188,7 +188,7 @@ function render(){
   maybeBrowserNotify();
   $("userStatus").innerHTML = userLine();
   renderTabs();
-  const pages = {overview, notifications, fightcard, fighters, myfighter, challenges, points, picks, leaderboard, belts, refs, ideas, rules, settings, admin};
+  const pages = {overview, notifications, fightcard, fighters, myfighter, challenges, points, exchange, picks, leaderboard, belts, refs, ideas, rules, settings, admin};
   if(typeof announcements === "function") pages.announcements = announcements;
   $("app").innerHTML = (pages[TAB] || overview)();
   applyAdminOnlyUi();
@@ -907,11 +907,95 @@ function pointOrdersHtml(){
   `).join("");
 }
 
+
+function rewardSlotsHtml(){
+  const slots = STATE.reward_slots || [];
+  const active = slots.filter(s=>Number(s.is_active||0)===1 && s.item_name && Number(s.points_cost||0)>0);
+  if(!active.length) return `<div class="empty">No item rewards available yet.</div>`;
+  return active.map(s=>`
+    <div class="card belt">
+      <h3>🎁 Slot ${esc(s.slot)} — ${esc(s.item_amount)}x ${esc(s.item_name)}</h3>
+      <span class="pill good">${esc(s.points_cost)} points</span>
+      ${s.reward_note?`<div class="muted">${esc(s.reward_note)}</div>`:""}
+      ${STATE.user ? `
+        <input id="rewardNote-${s.slot}" placeholder="Optional note for admin">
+        <button class="green" onclick="requestReward(${s.slot})">Exchange Points</button>
+      ` : `<button class="blue" onclick="setTab('settings')">Login to exchange</button>`}
+    </div>
+  `).join("");
+}
+
+function rewardRequestsHtml(){
+  const reqs = STATE.reward_requests || [];
+  if(!reqs.length) return `<div class="empty">No reward requests yet.</div>`;
+  return reqs.map(r=>`
+    <div class="mini">
+      <b>${esc(r.user_name||("User "+r.user_torn_id))}</b>
+      <span class="pill ${r.status==="pending"?"warn":r.status==="completed"?"good":"live"}">${esc(r.status)}</span>
+      <div>${esc(r.item_amount)}x ${esc(r.item_name)} for ${esc(r.points_cost)} points</div>
+      ${r.note?`<div class="muted">User note: ${esc(r.note)}</div>`:""}
+      ${r.admin_note?`<div class="muted">Admin note: ${esc(r.admin_note)}</div>`:""}
+      <div class="muted">${esc(r.created_at||"")}</div>
+      ${isAdmin() && r.status==="pending" ? `<div class="row"><input id="rewardAdminNote-${r.id}" placeholder="Admin note optional"><button class="green" onclick="resolveRewardRequest(${r.id},'completed')">Mark Completed</button><button class="red" onclick="resolveRewardRequest(${r.id},'rejected')">Reject + Refund</button></div>`:""}
+    </div>
+  `).join("");
+}
+
+function exchange(){
+  return `
+    <div class="card hero">
+      <h3>🎁 Points Exchange</h3>
+      <p class="muted">Use Fight Club points to request item rewards from admin, or buy more points using the current Slimy payment rate.</p>
+      <span class="pill">Your points: ${STATE.user ? esc(STATE.user.prediction_points) : "Login needed"}</span>
+      <span class="pill good">${esc(pointRateText())}</span>
+    </div>
+
+    <div class="grid wide" style="margin-top:10px">
+      <div class="card">
+        <h3>💰 Buy Points</h3>
+        <p class="muted">Send the required item payment to ${esc((STATE.point_settings||{}).pay_to_name||"Slimyfleshlite")} [${esc((STATE.point_settings||{}).pay_to_torn_id||1905671)}], then submit your request here.</p>
+        <span class="pill good">${esc(pointRateText())}</span>
+        ${STATE.user ? `
+          <input id="exchangePointItemAmount" type="number" min="1" placeholder="How many ${esc((STATE.point_settings||{}).item_name||"Xanax")} sent?">
+          <input id="exchangePointProof" placeholder="Optional proof/note, e.g. sent just now">
+          <button class="green" onclick="requestPointsFromExchange()">Submit Point Request</button>
+        ` : `<div class="empty">Login first to buy points.</div><button class="blue" onclick="setTab('settings')">Go to Settings</button>`}
+      </div>
+      ${rewardSlotsHtml()}
+    </div>
+
+    <div class="section-title">${isAdmin() ? "All Reward Requests" : "My Reward Requests"}</div>
+    <div class="card">
+      ${rewardRequestsHtml()}
+    </div>
+
+    ${isAdmin()?`
+      <div class="section-title">Admin Reward Slots</div>
+      <div class="card">
+        <h3>Set 5 Item Reward Slots</h3>
+        <p class="muted">Set item name, amount, point cost, and active status. Users can request active rewards only.</p>
+        ${[1,2,3,4,5].map(n=>{
+          const s = (STATE.reward_slots||[]).find(x=>Number(x.slot)===n) || {slot:n,item_name:"",item_amount:1,points_cost:0,reward_note:"",is_active:0};
+          return `<div class="mini">
+            <h3>Slot ${n}</h3>
+            <input id="rewardName-${n}" placeholder="Item name" value="${esc(s.item_name||"")}">
+            <input id="rewardAmount-${n}" type="number" min="1" placeholder="Item amount" value="${esc(s.item_amount||1)}">
+            <input id="rewardCost-${n}" type="number" min="0" placeholder="Points cost" value="${esc(s.points_cost||0)}">
+            <input id="rewardNote-${n}" placeholder="Reward note" value="${esc(s.reward_note||"")}">
+            <label class="mini"><input id="rewardActive-${n}" type="checkbox" ${Number(s.is_active||0)===1?"checked":""} style="width:auto;margin-right:6px">Active</label>
+          </div>`;
+        }).join("")}
+        <button class="gold" onclick="saveRewardSlots()">Save Reward Slots</button>
+      </div>
+    `:""}
+  `;
+}
+
 function points(){
   const s = STATE.point_settings || {item_name:"Xanax",item_amount:1,points_amount:100,pay_to_name:"Slimyfleshlite",pay_to_torn_id:1905671};
   return `
     <div class="card hero">
-      <h3>💰 Get Fight Club Points</h3>
+      <h3>💰 Get Fight Club Points</h3><button class="gold" onclick="setTab(\'exchange\')">Open Points Exchange</button>
       <p class="muted">Everyone starts with 0 points. To get points, send the required in-game item payment to Slimy, then submit the request here for admin approval.</p>
       <span class="pill good">${esc(pointRateText())}</span>
       <span class="pill">Send to ${esc(s.pay_to_name)} [${esc(s.pay_to_torn_id)}]</span>
@@ -1306,6 +1390,39 @@ function resetAllPoints(){
   action("/api/admin/points/reset-all",{
     confirm:$("resetConfirm").value
   },"All points reset to 0.");
+}
+
+
+function requestReward(slot){
+  action("/api/rewards/request",{
+    slot,
+    note:$("rewardNote-"+slot) ? $("rewardNote-"+slot).value : ""
+  },"Reward request submitted.");
+}
+function resolveRewardRequest(id,status){
+  action("/api/admin/rewards/requests/"+id+"/resolve",{
+    status,
+    admin_note:$("rewardAdminNote-"+id) ? $("rewardAdminNote-"+id).value : ""
+  },"Reward request updated.");
+}
+function saveRewardSlots(){
+  const slots = [1,2,3,4,5].map(n=>({
+    slot:n,
+    item_name:$("rewardName-"+n).value,
+    item_amount:$("rewardAmount-"+n).value,
+    points_cost:$("rewardCost-"+n).value,
+    reward_note:$("rewardNote-"+n).value,
+    is_active:$("rewardActive-"+n).checked
+  }));
+  action("/api/admin/rewards/slots",{slots},"Reward slots saved.");
+}
+
+
+function requestPointsFromExchange(){
+  action("/api/points/request",{
+    item_amount:$("exchangePointItemAmount").value,
+    proof:$("exchangePointProof").value
+  },"Point request submitted.");
 }
 
 render();
