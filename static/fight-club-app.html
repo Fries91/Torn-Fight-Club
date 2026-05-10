@@ -1063,7 +1063,76 @@ function points(){
 }
 
 function settings(){
-  return `<div class="grid wide"><div class="card hero"><h3>Login</h3><input id="apiKey" placeholder="Torn limited API key"><button class="green" onclick="login()">Login</button><button onclick="logout()">Logout</button><div class="muted">${userLine()}</div></div><div class="card"><h3>ToS</h3><p>Funny fights, serious rules. No scams, harassment, real cash/item betting, or nonsense.</p></div><div class="card"><h3>API Key</h3><p>Used for identity and private battle stats only. It does not move money/items or change your account.</p></div></div>`;
+  return `
+    <div class="card hero">
+      <h3>Settings, ToS & API Lockdown</h3>
+      <p class="muted">Fight Club uses a limited Torn API login to keep the app fair, organized, and rule-friendly.</p>
+      ${STATE.user ? `<span class="pill good">Logged in as ${esc(STATE.user.name)} [${esc(STATE.user.torn_id)}]</span><span class="pill">Role: ${esc(STATE.user.role||"member")}</span>` : `<span class="pill warn">Not logged in</span>`}
+    </div>
+
+    <div class="grid wide" style="margin-top:10px">
+      <div class="card">
+        <h3>API Key Login</h3>
+        <p>This app uses your Torn API key only to identify you and read the private information needed for Fight Club features.</p>
+        <input id="apiKey" type="password" placeholder="Paste limited Torn API key">
+        <button class="green" onclick="login()">Login / Save Key</button>
+        <button class="red" onclick="logout()">Logout / Clear Local Key</button>
+        <div class="muted" style="margin-top:8px">
+          Recommended: use a limited key. Do not share your key in chat, forum posts, Discord, or screenshots.
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>How Your API Key Is Used</h3>
+        <div class="mini">✅ Confirms your Torn ID and name for login.</div>
+        <div class="mini">✅ Checks your own battle stats/effective stats for private matchmaking.</div>
+        <div class="mini">✅ Shows your own private fighter info only to you where needed.</div>
+        <div class="mini">✅ Helps stop fake signups, fake point requests, and duplicate queue entries.</div>
+        <div class="mini">❌ Does not attack, trade, send items, message players, or control your account.</div>
+        <div class="mini">❌ Does not publicly show your exact effective stats.</div>
+      </div>
+
+      <div class="card">
+        <h3>Storage & Lockdown</h3>
+        <p class="muted">The app stores only what it needs to run Fight Club.</p>
+        <div class="mini">Stored locally on your device: app login token / saved API login state.</div>
+        <div class="mini">Stored on the backend: Torn ID, display name, fighter profile, ref signup, points, picks, queue status, requests, and notifications.</div>
+        <div class="mini">Private stats are used for matchmaking and should stay hidden from public pages.</div>
+        <div class="mini">Admin-only areas are locked to approved admins only.</div>
+        <div class="mini">Logout clears the saved local token from this device/browser.</div>
+      </div>
+
+      <div class="card">
+        <h3>How This Follows Torn Rules</h3>
+        <div class="mini">The app is an organizer/scoreboard/community tool, not an automation bot.</div>
+        <div class="mini">Players still perform all Torn actions themselves: attacking, sending items, and confirming trades.</div>
+        <div class="mini">Point purchases and reward exchanges are request-based. Admins manually verify and complete them.</div>
+        <div class="mini">Matchmaking uses users’ own API-authorized stats to find fair fights; it does not scrape or expose secret stats publicly.</div>
+        <div class="mini">Browser notifications and app alerts only notify users; they do not perform Torn actions.</div>
+        <div class="mini">No auto-attacks, no auto-trading, no auto-item sending, no account control.</div>
+      </div>
+
+      <div class="card">
+        <h3>Fight Club ToS</h3>
+        <p>By using this app, you agree to keep Fight Club fun, fair, and not be a donkey about it.</p>
+        <div class="mini">🥊 You understand this is a community-run entertainment app.</div>
+        <div class="mini">🥊 Fight results, wagers, points, rewards, and matches may need admin/ref confirmation.</div>
+        <div class="mini">🥊 Fun points are app points only and are managed by admin approval.</div>
+        <div class="mini">🥊 Reward requests are not automatic. Admin must verify and complete them manually.</div>
+        <div class="mini">🥊 If you abuse the app, fake payments, spam requests, or try to exploit points, admin can remove or reject your access.</div>
+        <div class="mini">🥊 First rule of Fight Club: you absolutely talk about Fight Club.</div>
+      </div>
+
+      <div class="card">
+        <h3>Feature Privacy Notes</h3>
+        <div class="mini"><b>Matchmaking:</b> uses effective stats privately to pair similar fighters within the selected range.</div>
+        <div class="mini"><b>Picks:</b> uses fun points only. Wagers are app-based and resolved by fight/admin outcome.</div>
+        <div class="mini"><b>Points:</b> users request points after sending the configured item payment to Slimy/admin.</div>
+        <div class="mini"><b>Exchange:</b> users request item rewards using points; admin manually completes or refunds.</div>
+        <div class="mini"><b>Notifications:</b> alerts are app/browser notifications only while the app/script can check them.</div>
+      </div>
+    </div>
+  `;
 }
 
 function admin(){
