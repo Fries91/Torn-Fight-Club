@@ -736,7 +736,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.9.0",
+        "version": "4.9.2",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -918,7 +918,16 @@ def state():
         alerts = [dict(x) for x in con.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 50").fetchall()]
         point_settings_row = con.execute("SELECT * FROM point_settings WHERE id=1").fetchone()
         point_settings = dict(point_settings_row) if point_settings_row else {"item_name":"Xanax","item_amount":1,"points_amount":100,"pay_to_name":"Slimyfleshlite","pay_to_torn_id":1905671}
-        reward_slots = [dict(x) for x in con.execute("SELECT * FROM reward_slots ORDER BY slot ASC").fetchall()]
+        reward_slots = []
+        if token_user and token_user.get("role") == "admin":
+            reward_slots = [dict(x) for x in con.execute("SELECT * FROM reward_slots ORDER BY slot ASC").fetchall()]
+        else:
+            reward_slots = [dict(x) for x in con.execute("""
+                SELECT slot, item_name, item_amount, points_cost, reward_note, is_active
+                FROM reward_slots
+                WHERE is_active=1 AND item_name<>'' AND points_cost>0
+                ORDER BY slot ASC
+            """).fetchall()]
         reward_requests = []
         mm_settings_row = con.execute("SELECT * FROM matchmaking_settings WHERE id=1").fetchone()
         matchmaking_settings = dict(mm_settings_row) if mm_settings_row else {"range_amount":5000000}
@@ -934,8 +943,21 @@ def state():
             else:
                 point_orders = [dict(x) for x in con.execute("SELECT * FROM point_orders WHERE user_torn_id=? ORDER BY id DESC LIMIT 25", (token_user["torn_id"],)).fetchall()]
                 reward_requests = [dict(x) for x in con.execute("SELECT * FROM reward_requests WHERE user_torn_id=? ORDER BY id DESC LIMIT 25", (token_user["torn_id"],)).fetchall()]
-                match_queue = [dict(x) for x in con.execute("SELECT * FROM match_queue WHERE user_torn_id=? ORDER BY id DESC LIMIT 5", (token_user["torn_id"],)).fetchall()]
-                matchmaking_matches = [dict(x) for x in con.execute("""SELECT * FROM matchmaking_matches WHERE user_a_torn_id=? OR user_b_torn_id=? ORDER BY id DESC LIMIT 25""", (token_user["torn_id"], token_user["torn_id"])).fetchall()]
+                match_queue = [dict(x) for x in con.execute("""
+                    SELECT id, user_torn_id, user_name, fighter_id, 0 AS total_stats, stats_type, range_amount, status, created_at, matched_at
+                    FROM match_queue
+                    WHERE user_torn_id=?
+                    ORDER BY id DESC LIMIT 5
+                """, (token_user["torn_id"],)).fetchall()]
+                matchmaking_matches = [dict(x) for x in con.execute("""
+                    SELECT id, queue_a_id, queue_b_id, fighter_a_id, fighter_b_id,
+                           user_a_torn_id, user_b_torn_id, user_a_name, user_b_name,
+                           0 AS stats_a, 0 AS stats_b, stats_diff, range_amount,
+                           status, fight_id, created_at, resolved_at, admin_note
+                    FROM matchmaking_matches
+                    WHERE user_a_torn_id=? OR user_b_torn_id=?
+                    ORDER BY id DESC LIMIT 25
+                """, (token_user["torn_id"], token_user["torn_id"])).fetchall()]
 
     for b in belts:
         b["history"] = safe_json(b.pop("history_json", "[]"), [])
@@ -2600,6 +2622,18 @@ def review_fight_log(log_id):
             fight_id=log["fight_id"]
         )
         audit(con, request.user["torn_id"], "review_fight_log", f"fight_log:{log_id}", {"status": status, "update_fight": update_fight})
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/notifications/clear-read")
+@require_login
+def clear_read_notifications():
+    with db() as con:
+        con.execute("""
+            DELETE FROM user_notifications
+            WHERE user_torn_id=? AND is_read=1
+        """, (request.user["torn_id"],))
 
     return jsonify({"ok": True})
 
