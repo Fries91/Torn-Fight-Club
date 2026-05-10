@@ -201,6 +201,34 @@ def init_db():
 
 
 
+
+            CREATE TABLE IF NOT EXISTS reward_slots (
+                slot INTEGER PRIMARY KEY,
+                item_name TEXT NOT NULL DEFAULT '',
+                item_amount INTEGER NOT NULL DEFAULT 1,
+                points_cost INTEGER NOT NULL DEFAULT 0,
+                reward_note TEXT,
+                is_active INTEGER NOT NULL DEFAULT 0,
+                updated_by INTEGER,
+                updated_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS reward_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_torn_id INTEGER NOT NULL,
+                user_name TEXT,
+                slot INTEGER NOT NULL,
+                item_name TEXT NOT NULL,
+                item_amount INTEGER NOT NULL DEFAULT 1,
+                points_cost INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'pending',
+                note TEXT,
+                created_at TEXT NOT NULL,
+                resolved_by INTEGER,
+                resolved_at TEXT,
+                admin_note TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS point_settings (
                 id INTEGER PRIMARY KEY CHECK (id=1),
                 item_name TEXT NOT NULL DEFAULT 'Xanax',
@@ -356,6 +384,10 @@ def init_db():
                 ("Opening Chaos Night", "Pillow Fight Championship", "planned", "", 3679030, now_iso()),
             )
 
+
+        for slot in range(1, 6):
+            con.execute("INSERT OR IGNORE INTO reward_slots(slot, item_name, item_amount, points_cost, reward_note, is_active, updated_at) VALUES(?, '', 1, 0, '', 0, ?)", (slot, now_iso()))
+        con.execute("INSERT OR IGNORE INTO point_settings(id, item_name, item_amount, points_amount, pay_to_name, pay_to_torn_id, updated_at) VALUES(1, 'Xanax', 1, 100, 'Slimyfleshlite', 1905671, ?)", (now_iso(),))
 
 init_db()
 
@@ -530,7 +562,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.6.0",
+        "version": "4.7.0",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -539,9 +571,6 @@ def home():
 
 @app.get("/app")
 def app_page():
-
-        con.execute("INSERT OR IGNORE INTO point_settings(id, item_name, item_amount, points_amount, pay_to_name, pay_to_torn_id, updated_at) VALUES(1, 'Xanax', 1, 100, 'Slimyfleshlite', 1905671, now_iso())")
-
     return app.send_static_file("fight-club-app.html")
 @app.get("/app/public")
 def public_app_page():
@@ -575,7 +604,7 @@ def login():
 
     with db() as con:
         existing = con.execute("SELECT prediction_points, created_at FROM users WHERE torn_id=?", (torn_id,)).fetchone()
-        points = existing["prediction_points"] if existing else 1000
+        points = existing["prediction_points"] if existing else 0
         created_at = existing["created_at"] if existing else now_iso()
         con.execute(
             """
@@ -697,12 +726,16 @@ def state():
         alerts = [dict(x) for x in con.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT 50").fetchall()]
         point_settings_row = con.execute("SELECT * FROM point_settings WHERE id=1").fetchone()
         point_settings = dict(point_settings_row) if point_settings_row else {"item_name":"Xanax","item_amount":1,"points_amount":100,"pay_to_name":"Slimyfleshlite","pay_to_torn_id":1905671}
+        reward_slots = [dict(x) for x in con.execute("SELECT * FROM reward_slots ORDER BY slot ASC").fetchall()]
+        reward_requests = []
         point_orders = []
         if token_user:
             if token_user.get("role") == "admin":
                 point_orders = [dict(x) for x in con.execute("SELECT * FROM point_orders ORDER BY id DESC LIMIT 100").fetchall()]
+                reward_requests = [dict(x) for x in con.execute("SELECT * FROM reward_requests ORDER BY id DESC LIMIT 100").fetchall()]
             else:
                 point_orders = [dict(x) for x in con.execute("SELECT * FROM point_orders WHERE user_torn_id=? ORDER BY id DESC LIMIT 25", (token_user["torn_id"],)).fetchall()]
+                reward_requests = [dict(x) for x in con.execute("SELECT * FROM reward_requests WHERE user_torn_id=? ORDER BY id DESC LIMIT 25", (token_user["torn_id"],)).fetchall()]
 
     for b in belts:
         b["history"] = safe_json(b.pop("history_json", "[]"), [])
@@ -736,6 +769,8 @@ def state():
         "alerts": alerts,
         "point_settings": point_settings,
         "point_orders": point_orders,
+        "reward_slots": reward_slots,
+        "reward_requests": reward_requests,
         "safety_note": "Prediction points only. Do not use this app to handle real Torn money, items, or off-platform gambling.",
     })
 
@@ -1994,6 +2029,142 @@ def reset_all_points():
     with db() as con:
         con.execute("UPDATE users SET prediction_points=0")
         audit(con, request.user["torn_id"], "reset_all_points", "points:all", {})
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/rewards/slots")
+@require_admin
+def update_reward_slots():
+    data = request.get_json(force=True, silent=True) or {}
+    slots = data.get("slots") or []
+
+    if not isinstance(slots, list):
+        return jsonify({"ok": False, "error": "Slots must be a list"}), 400
+
+    with db() as con:
+        for item in slots[:5]:
+            slot = int(item.get("slot") or 0)
+            if slot < 1 or slot > 5:
+                continue
+            item_name = (item.get("item_name") or "").strip()[:100]
+            item_amount = int(item.get("item_amount") or 1)
+            points_cost = int(item.get("points_cost") or 0)
+            reward_note = (item.get("reward_note") or "").strip()[:300]
+            is_active = 1 if item.get("is_active") in (True, 1, "1", "true", "on", "yes") else 0
+
+            if item_amount < 1:
+                item_amount = 1
+            if points_cost < 0:
+                points_cost = 0
+
+            con.execute("""
+                INSERT INTO reward_slots(slot, item_name, item_amount, points_cost, reward_note, is_active, updated_by, updated_at)
+                VALUES(?,?,?,?,?,?,?,?)
+                ON CONFLICT(slot) DO UPDATE SET
+                    item_name=excluded.item_name,
+                    item_amount=excluded.item_amount,
+                    points_cost=excluded.points_cost,
+                    reward_note=excluded.reward_note,
+                    is_active=excluded.is_active,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+            """, (slot, item_name, item_amount, points_cost, reward_note, is_active, request.user["torn_id"], now_iso()))
+
+        audit(con, request.user["torn_id"], "update_reward_slots", "rewards:slots", {"count": len(slots[:5])})
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/rewards/request")
+@require_login
+def request_reward():
+    data = request.get_json(force=True, silent=True) or {}
+    slot = int(data.get("slot") or 0)
+    note = (data.get("note") or "").strip()[:500]
+
+    if slot < 1 or slot > 5:
+        return jsonify({"ok": False, "error": "Choose a reward slot"}), 400
+
+    with db() as con:
+        reward = con.execute("SELECT * FROM reward_slots WHERE slot=?", (slot,)).fetchone()
+        if not reward or not int(reward["is_active"] or 0) or not reward["item_name"] or int(reward["points_cost"] or 0) < 1:
+            return jsonify({"ok": False, "error": "Reward is not available"}), 400
+
+        user = con.execute("SELECT * FROM users WHERE torn_id=?", (request.user["torn_id"],)).fetchone()
+        if not user:
+            return jsonify({"ok": False, "error": "User not found"}), 404
+
+        cost = int(reward["points_cost"] or 0)
+        if int(user["prediction_points"] or 0) < cost:
+            return jsonify({"ok": False, "error": "Not enough points"}), 400
+
+        con.execute("UPDATE users SET prediction_points=prediction_points-? WHERE torn_id=?", (cost, request.user["torn_id"]))
+        cur = con.execute("""
+            INSERT INTO reward_requests(user_torn_id, user_name, slot, item_name, item_amount, points_cost, status, note, created_at)
+            VALUES(?,?,?,?,?,?,?,?,?)
+        """, (
+            request.user["torn_id"],
+            request.user.get("name"),
+            slot,
+            reward["item_name"],
+            int(reward["item_amount"] or 1),
+            cost,
+            "pending",
+            note,
+            now_iso(),
+        ))
+        req_id = cur.lastrowid
+        audit(con, request.user["torn_id"], "request_reward", f"reward_request:{req_id}", {
+            "slot": slot,
+            "item_name": reward["item_name"],
+            "points_cost": cost,
+        })
+
+    return jsonify({"ok": True, "request_id": req_id})
+
+
+@app.post("/api/admin/rewards/requests/<int:request_id>/resolve")
+@require_admin
+def resolve_reward_request(request_id):
+    data = request.get_json(force=True, silent=True) or {}
+    status = (data.get("status") or "").strip().lower()
+    admin_note = (data.get("admin_note") or "").strip()[:500]
+
+    if status not in ("completed", "rejected"):
+        return jsonify({"ok": False, "error": "Status must be completed or rejected"}), 400
+
+    with db() as con:
+        req = con.execute("SELECT * FROM reward_requests WHERE id=?", (request_id,)).fetchone()
+        if not req:
+            return jsonify({"ok": False, "error": "Reward request not found"}), 404
+        if req["status"] != "pending":
+            return jsonify({"ok": False, "error": "Reward request already resolved"}), 400
+
+        if status == "rejected":
+            con.execute("UPDATE users SET prediction_points=prediction_points+? WHERE torn_id=?", (int(req["points_cost"] or 0), req["user_torn_id"]))
+            create_user_notification(
+                con,
+                req["user_torn_id"],
+                "Reward request rejected",
+                admin_note or f"Your {req['item_name']} reward request was rejected and points were refunded.",
+                "reward"
+            )
+        else:
+            create_user_notification(
+                con,
+                req["user_torn_id"],
+                "Reward request completed",
+                f"Your reward request for {req['item_amount']}x {req['item_name']} was marked completed.",
+                "reward"
+            )
+
+        con.execute("""
+            UPDATE reward_requests
+            SET status=?, resolved_by=?, resolved_at=?, admin_note=?
+            WHERE id=?
+        """, (status, request.user["torn_id"], now_iso(), admin_note, request_id))
+        audit(con, request.user["torn_id"], "resolve_reward_request", f"reward_request:{request_id}", {"status": status})
 
     return jsonify({"ok": True})
 
