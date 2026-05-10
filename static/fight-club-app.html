@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Torn Fight Club</title>
+<style>
+body{margin:0;background:#070707;color:#f4f4f4;font-family:Arial,Helvetica,sans-serif}
+header{position:sticky;top:0;z-index:10;background:linear-gradient(90deg,#260000,#111);border-bottom:1px solid #8b0000;box-shadow:0 8px 24px #0008}
+.head{max-width:1180px;margin:auto;padding:12px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.logo{font-size:22px;font-weight:900;text-shadow:0 0 12px #d00}
+.status{font-size:12px;color:#aaa;text-align:right}
+.tabs{max-width:1180px;margin:auto;padding:0 12px 12px;display:flex;gap:6px;flex-wrap:wrap}
+button,.tab{border:1px solid #666;background:#222;color:#fff;border-radius:10px;padding:9px 11px;font-weight:900;cursor:pointer}
+.tab{border-radius:999px}.tab.active{background:#b40000;border-color:#ff5555}
+main{max-width:1180px;margin:auto;padding:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:10px}
+.wide{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+.card{background:#141414;border:1px solid #333;border-radius:16px;padding:12px;box-shadow:0 12px 32px #0008}
+.hero{background:linear-gradient(135deg,#2b0000,#141414);border-color:#a10000}
+.private{background:linear-gradient(135deg,#111827,#0b0b0b);border-color:#60a5fa}
+.belt{background:linear-gradient(135deg,#3a2600,#111);border-color:#c79a22}
+.ref{background:linear-gradient(135deg,#081b2f,#111);border-color:#3aa5ff}
+h3{margin:0 0 8px;color:#ff4b4b}.muted{color:#aaa;font-size:12px}
+.pill{display:inline-block;border:1px solid #555;background:#222;border-radius:999px;padding:4px 8px;margin:2px;font-size:12px}
+.good{border-color:#22c55e;background:#052e16;color:#bbf7d0}.warn{border-color:#f59e0b;background:#332500;color:#fde68a}.live{border-color:#ef4444;background:#3b0505;color:#fecaca}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.between{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+input,select,textarea{width:100%;background:#080808;color:#fff;border:1px solid #555;border-radius:10px;padding:10px;margin:4px 0;box-sizing:border-box}
+textarea{min-height:90px}.green{background:#064b20;border-color:#20c060}.red{background:#8b0000;border-color:#ff3333}.gold{background:#5c4000;border-color:#ffc107}.blue{background:#07365c;border-color:#3aa5ff}
+.mini{background:#0c0c0c;border:1px solid #2a2a2a;border-radius:10px;padding:8px;margin:6px 0}
+.empty{border:1px dashed #555;border-radius:12px;color:#aaa;text-align:center;padding:14px}
+.vs{font-size:22px;font-weight:900;color:#ff4b4b}.rank{font-size:22px;color:#ff4b4b;font-weight:900}
+#toast{position:fixed;right:12px;bottom:12px;background:#111;border:1px solid #ff4b4b;border-radius:12px;padding:10px;display:none;z-index:50;max-width:90vw}
+@media(max-width:650px){.head{display:block}.status{text-align:left;margin-top:5px}.grid,.wide{grid-template-columns:1fr}main{padding:8px}.tab{font-size:12px;padding:7px 8px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="head">
+    <div class="logo">🥊🔥 THE TORN FIGHT CLUB</div>
+    <div class="status" id="userStatus">Starting...</div>
+  </div>
+  <nav class="tabs" id="tabs"></nav>
+</header>
+
+<main id="app">
+  <div class="card hero">
+    <h3>Loading Fight Club...</h3>
+    <p class="muted">Connecting to backend...</p>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const BASE = "https://torn-fight-club.onrender.com";
+let TOKEN = localStorage.getItem("tfc_token") || "";
+let TAB = localStorage.getItem("tfc_tab") || "overview";
+let STATE = {
+  ok: true,
+  user: null,
+  events: [],
+  fighters: [],
+  fights: [],
+  ideas: [],
+  leaderboard: [],
+  my_predictions: [],
+  tournaments: [],
+  tournament_entries: [],
+  belts: [],
+  teams: [],
+  referees: []
+};
+
+const ADMINS = [3679030, 1905671];
+
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s ?? "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function toast(msg){const t=$("toast");t.textContent=msg;t.style.display="block";setTimeout(()=>t.style.display="none",3500);}
+function isAdmin(){return STATE.user && ADMINS.includes(Number(STATE.user.torn_id));}
+function userLine(){return STATE.user ? `${esc(STATE.user.name)} [${STATE.user.torn_id}] • ${esc(STATE.user.role)} • ${STATE.user.prediction_points} pts` : "Not logged in";}
+function setTab(t){TAB=t;localStorage.setItem("tfc_tab",t);render();}
+function fights(status){return (STATE.fights||[]).filter(f=>!status||f.status===status);}
+function eventOptions(){return (STATE.events||[]).map(e=>`<option value="${e.id}">${e.id} — ${esc(e.title)}</option>`).join("") || `<option value="1">Default Event</option>`;}
+function fighterOptions(label="Choose fighter"){return `<option value="">${esc(label)}</option>` + (STATE.fighters||[]).map(f=>`<option value="${f.id}">${f.id} — ${esc(f.nickname||f.name)} [${f.torn_id}]</option>`).join("");}
+function fightOptions(){return `<option value="">Choose fight</option>` + (STATE.fights||[]).map(f=>`<option value="${f.id}">${f.id} — ${esc(f.fighter_a_nick||f.fighter_a_name)} vs ${esc(f.fighter_b_nick||f.fighter_b_name)} — ${esc(f.status)}</option>`).join("");}
+function fighterName(id){const f=(STATE.fighters||[]).find(x=>Number(x.id)===Number(id));return f ? (f.nickname||f.name) : "Fighter "+id;}
+
+async function api(path, method="GET", body=null){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), 15000);
+  try{
+    const res = await fetch(BASE + path, {
+      method,
+      signal: controller.signal,
+      headers: {
+        "Content-Type":"application/json",
+        ...(TOKEN ? {"Authorization":"Bearer "+TOKEN} : {})
+      },
+      body: body ? JSON.stringify(body) : null
+    });
+    const text = await res.text();
+    let data = {};
+    try{data = JSON.parse(text || "{}");}
+    catch(e){throw new Error("Backend returned bad JSON.");}
+    if(!res.ok || data.ok === false) throw new Error(data.error || "Backend request failed.");
+    return data;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+async function refresh(){
+  $("userStatus").textContent = "Refreshing...";
+  try{
+    STATE = await api("/api/state");
+    render();
+  }catch(e){
+    $("userStatus").textContent = "Offline";
+    $("app").innerHTML = `
+      <div class="card hero">
+        <h3>Connection Error</h3>
+        <p>${esc(e.message)}</p>
+        <p class="muted">Check that Render is deployed and /api/state works.</p>
+        <button onclick="refresh()">Retry</button>
+      </div>
+    `;
+  }
+}
+
+function renderTabs(){
+  const tabs = ["overview","fightcard","fighters","picks","leaderboard","tournaments","belts","teams","refs","ideas","rules","settings"];
+  if(isAdmin()) tabs.push("admin");
+  const labels = {overview:"Overview",fightcard:"Fight Card",fighters:"Fighters",picks:"Picks",leaderboard:"Ranks",tournaments:"Brackets",belts:"Belts",teams:"Teams",refs:"Refs",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
+  $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
+}
+
+function render(){
+  $("userStatus").innerHTML = userLine();
+  renderTabs();
+  const pages = {overview, fightcard, fighters, picks, leaderboard, tournaments, belts, teams, refs, ideas, rules, settings, admin};
+  $("app").innerHTML = (pages[TAB] || overview)();
+}
+
+function fightCard(f, pick=false){
+  const a = f.fighter_a_nick || f.fighter_a_name || "Fighter A";
+  const b = f.fighter_b_nick || f.fighter_b_name || "Fighter B";
+  const mine = (STATE.my_predictions||[]).find(p=>Number(p.fight_id)===Number(f.id));
+  const cls = f.status==="live" ? "live" : f.status==="done" ? "good" : "warn";
+  return `
+    <div class="card">
+      <div class="between"><h3>${esc(f.round_name||"Fight Card")}</h3><span class="pill ${cls}">${esc(f.status)}</span></div>
+      <div class="row"><b>${esc(a)}</b><span class="vs">VS</span><b>${esc(b)}</b></div>
+      <div class="muted">${esc(f.rule_set||"No rules set")}</div>
+      <span class="pill">Fight ID ${f.id}</span><span class="pill">A odds ${f.odds_a}</span><span class="pill">B odds ${f.odds_b}</span>
+      ${f.winner_fighter_id ? `<div><span class="pill good">Winner ${esc(fighterName(f.winner_fighter_id))} • ${esc(f.result_method)}</span></div>` : ""}
+      ${pick && ["live","scheduled"].includes(f.status) ? (
+        mine ? `<div><span class="pill good">You picked ${esc(fighterName(mine.pick_fighter_id))} for ${mine.points} pts</span></div>` :
+        STATE.user ? `<div class="row"><input id="pts-${f.id}" type="number" min="1" max="100" value="10" style="max-width:120px"><button class="green" onclick="makePick(${f.id},${f.fighter_a_id})">Pick ${esc(a)}</button><button class="green" onclick="makePick(${f.id},${f.fighter_b_id})">Pick ${esc(b)}</button></div>` :
+        `<button class="blue" onclick="setTab('settings')">Login to Pick</button>`
+      ) : ""}
+    </div>
+  `;
+}
+
+function overview(){
+  const top = [...(STATE.fighters||[])].sort((a,b)=>(b.rank_points||0)-(a.rank_points||0))[0];
+  const next = fights("live")[0] || fights("scheduled")[0];
+  return `
+    <div class="grid wide">
+      <div class="card hero">
+        <h3>Fight Night Control</h3>
+        <p>Real app page. The Torn userscript is only the launcher now.</p>
+        <span class="pill good">Prediction points only</span>
+        <div class="row" style="margin-top:8px">
+          <button class="green" onclick="setTab('fightcard')">Fight Card</button>
+          <button class="blue" onclick="setTab('fighters')">Fighters</button>
+          <button class="gold" onclick="setTab('picks')">Picks</button>
+          ${isAdmin()?`<button class="red" onclick="setTab('admin')">Admin</button>`:""}
+        </div>
+      </div>
+      <div class="card">
+        <h3>Numbers</h3>
+        <span class="pill live">Live ${fights("live").length}</span>
+        <span class="pill warn">Scheduled ${fights("scheduled").length}</span>
+        <span class="pill good">Done ${fights("done").length}</span>
+        <span class="pill">Fighters ${(STATE.fighters||[]).length}</span>
+      </div>
+      <div class="card">
+        <h3>Top Fighter</h3>
+        ${top ? `<b>${esc(top.nickname||top.name)}</b><br><span class="pill">Rank ${top.rank_points}</span><span class="pill">Record ${top.record_w}-${top.record_l}</span>` : `<div class="empty">No fighters yet.</div>`}
+      </div>
+    </div>
+    <div class="card" style="margin-top:10px">
+      <h3>Next Fight</h3>
+      ${next ? fightCard(next,false) : `<div class="empty">No live or scheduled fight yet.</div>`}
+    </div>
+  `;
+}
+
+function fightcard(){
+  return `<div class="card hero"><h3>Fight Card</h3><button onclick="refresh()">Refresh</button></div><div class="grid wide" style="margin-top:10px">${(STATE.fights||[]).map(f=>fightCard(f,false)).join("") || `<div class="empty">No fights yet.</div>`}</div>`;
+}
+
+function privateStats(){
+  const raw = localStorage.getItem("tfc_private_battle_stats");
+  if(!raw) return `<div class="empty">Login with an API key that allows battle stats.</div><div class="muted">Only visible on your device.</div>`;
+  let s; try{s=JSON.parse(raw);}catch(e){return `<div class="empty">Saved stats unreadable. Login again.</div>`;}
+  const f = n => Number(n||0).toLocaleString();
+  return `<div class="grid"><div class="mini">STR <b>${f(s.strength)}</b></div><div class="mini">DEF <b>${f(s.defense)}</b></div><div class="mini">SPD <b>${f(s.speed)}</b></div><div class="mini">DEX <b>${f(s.dexterity)}</b></div><div class="mini">TOTAL <b>${f(s.total)}</b></div></div>`;
+}
+
+function fighters(){
+  return `
+    <div class="grid wide">
+      <div class="card hero"><h3>Fighters</h3><span class="pill">Total ${(STATE.fighters||[]).length}</span></div>
+      <div class="card"><h3>Register</h3>${STATE.user ? `<select id="regEvent">${eventOptions()}</select><input id="nick" placeholder="Nickname"><input id="range" placeholder="Stats class"><input id="loadout" placeholder="Funny loadout"><button class="green" onclick="registerFighter()">Register</button>` : `<div class="empty">Login first.</div>`}</div>
+      <div class="card private"><h3>Private Battle Stats</h3>${privateStats()}</div>
+    </div>
+    <div class="grid wide" style="margin-top:10px">
+      ${(STATE.fighters||[]).map((f,i)=>`<div class="card"><h3><span class="rank">#${i+1}</span>${esc(f.nickname||f.name)}</h3><div>${esc(f.name)} [${f.torn_id}]</div><div class="muted">${esc(f.stats_range||"No range")}</div><div>${esc(f.loadout||"No loadout")}</div><span class="pill">Record ${f.record_w}-${f.record_l}</span><span class="pill">Rank ${f.rank_points}</span></div>`).join("") || `<div class="empty">No fighters yet.</div>`}
+    </div>
+  `;
+}
+
+function picks(){
+  const open = (STATE.fights||[]).filter(f=>["live","scheduled"].includes(f.status));
+  return `<div class="card hero"><h3>Fun Picks</h3><span class="pill">Your points: ${STATE.user?STATE.user.prediction_points:"Login needed"}</span></div><div class="grid wide" style="margin-top:10px">${open.map(f=>fightCard(f,true)).join("") || `<div class="empty">No open fights.</div>`}</div>`;
+}
+
+function leaderboard(){
+  const fs = [...(STATE.fighters||[])].sort((a,b)=>(b.rank_points||0)-(a.rank_points||0));
+  return `<div class="grid wide"><div class="card"><h3>Prediction Points</h3>${(STATE.leaderboard||[]).map((u,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(u.name)}</b> — ${u.prediction_points} pts</div>`).join("") || `<div class="empty">None yet.</div>`}</div><div class="card"><h3>Fighter Rank</h3>${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${f.rank_points}</div>`).join("") || `<div class="empty">None yet.</div>`}</div></div>`;
+}
+
+function tournaments(){
+  return `<div class="card hero"><h3>Brackets</h3></div>${isAdmin()?`<div class="grid wide" style="margin-top:10px"><div class="card"><h3>Create Tournament</h3><select id="tourEvent">${eventOptions()}</select><input id="tourTitle" placeholder="Title"><select id="tourFormat"><option value="single_elim">Single Elim</option><option value="king_hill">King of the Hill</option><option value="round_robin">Round Robin</option></select><input id="tourNotes" placeholder="Notes"><button class="green" onclick="createTournament()">Create</button></div></div>`:""}<div class="grid wide" style="margin-top:10px">${(STATE.tournaments||[]).map(t=>`<div class="card"><h3>${esc(t.title)}</h3><span class="pill warn">${esc(t.status)}</span><div class="muted">${esc(t.format)} • ${esc(t.notes||"")}</div></div>`).join("") || `<div class="empty">No tournaments yet.</div>`}</div>`;
+}
+
+function belts(){return `<div class="card hero"><h3>Belts</h3></div><div class="grid wide" style="margin-top:10px">${(STATE.belts||[]).map(b=>`<div class="card belt"><h3>${esc(b.name)}</h3><div>${b.holder_fighter_id?"Holder: "+esc(b.holder_nick||b.holder_name):"Vacant"}</div></div>`).join("") || `<div class="empty">No belts yet.</div>`}</div>`;}
+function teams(){return `<div class="card hero"><h3>Teams</h3></div><div class="grid wide" style="margin-top:10px">${(STATE.teams||[]).map(t=>`<div class="card"><h3>${esc(t.name)}</h3><div>${esc(t.notes||"")}</div></div>`).join("") || `<div class="empty">No teams yet.</div>`}</div>`;}
+function refs(){return `<div class="card hero"><h3>Refs</h3></div><div class="grid wide" style="margin-top:10px">${(STATE.referees||[]).map(r=>`<div class="card ref"><h3>${esc(r.name)}</h3><div>${esc(r.notes||"")}</div></div>`).join("") || `<div class="empty">No refs yet.</div>`}</div>`;}
+
+function ideas(){
+  return `<div class="card hero"><h3>Ideas</h3>${STATE.user?`<textarea id="idea" placeholder="Drop a cursed fight idea..."></textarea><button class="green" onclick="submitIdea()">Submit</button>`:`<div class="empty">Login to submit.</div>`}</div><div class="grid wide" style="margin-top:10px">${(STATE.ideas||[]).map(i=>`<div class="card"><b>${esc(i.name||"Someone")}</b><p>${esc(i.idea)}</p></div>`).join("") || `<div class="empty">No ideas yet.</div>`}</div>`;
+}
+
+function rules(){
+  return `<div class="grid wide"><div class="card hero"><h3>Rules</h3><p><b>First rule:</b> You absolutely talk about Fight Club.</p><span class="pill good">Prediction points only</span><span class="pill warn">No real Torn cash/items betting</span></div><div class="card"><h3>Win Conditions</h3><div>💀 KO</div><div>🩸 Lowest HP</div><div>🏳️ Surrender</div></div></div>`;
+}
+
+function settings(){
+  return `<div class="grid wide"><div class="card hero"><h3>Login</h3><input id="apiKey" placeholder="Torn limited API key"><button class="green" onclick="login()">Login</button><button onclick="logout()">Logout</button><div class="muted">${userLine()}</div></div><div class="card"><h3>ToS</h3><p>Funny fights, serious rules. No scams, harassment, real cash/item betting, or nonsense.</p></div><div class="card"><h3>API Key</h3><p>Used for identity and private battle stats only. It does not move money/items or change your account.</p></div></div>`;
+}
+
+function admin(){
+  return `<div class="grid wide"><div class="card hero"><h3>Admin</h3></div><div class="card"><h3>Create Event</h3><input id="evTitle" placeholder="Title"><input id="evTheme" placeholder="Theme"><input id="evStart" placeholder="Start"><button class="green" onclick="createEvent()">Create</button></div><div class="card"><h3>Create Fight</h3><select id="fightEvent">${eventOptions()}</select><select id="fighterA">${fighterOptions("Fighter A")}</select><select id="fighterB">${fighterOptions("Fighter B")}</select><input id="roundName" placeholder="Round"><input id="fightRules" placeholder="Rules"><input id="startTime" placeholder="Start"><input id="oddsA" value="1.9"><input id="oddsB" value="1.9"><button class="green" onclick="createFight()">Create</button></div><div class="card"><h3>Status</h3><select id="statusFight">${fightOptions()}</select><select id="statusVal"><option>scheduled</option><option>live</option><option>done</option><option>cancelled</option></select><button class="gold" onclick="setFightStatus()">Save</button></div><div class="card"><h3>Result</h3><select id="resFight">${fightOptions()}</select><select id="resWinner">${fighterOptions("Winner")}</select><input id="resMethod" placeholder="KO / Lowest HP / Surrender"><button class="red" onclick="saveResult()">Save</button></div></div>`;
+}
+
+async function login(){
+  try{
+    const r = await api("/api/login","POST",{api_key:$("apiKey").value.trim()});
+    TOKEN = r.token;
+    localStorage.setItem("tfc_token", TOKEN);
+    if(r.private_battle_stats) localStorage.setItem("tfc_private_battle_stats", JSON.stringify(r.private_battle_stats));
+    toast("Logged in.");
+    await refresh();
+  }catch(e){toast(e.message);}
+}
+async function logout(){TOKEN="";localStorage.removeItem("tfc_token");localStorage.removeItem("tfc_private_battle_stats");await refresh();}
+async function action(path, body, msg){try{await api(path,"POST",body);toast(msg);await refresh();}catch(e){toast(e.message);}}
+
+function registerFighter(){action("/api/fighters/register",{event_id:$("regEvent").value,nickname:$("nick").value,stats_range:$("range").value,loadout:$("loadout").value},"Registered.");}
+function submitIdea(){action("/api/ideas",{idea:$("idea").value},"Submitted.");}
+function makePick(fight,pick){action("/api/predictions",{fight_id:fight,pick_fighter_id:pick,points:$("pts-"+fight).value},"Pick saved.");}
+function createEvent(){action("/api/admin/events",{title:$("evTitle").value,theme:$("evTheme").value,starts_at:$("evStart").value},"Event created.");}
+function createFight(){action("/api/admin/fights",{event_id:$("fightEvent").value,fighter_a_id:$("fighterA").value,fighter_b_id:$("fighterB").value,round_name:$("roundName").value,rule_set:$("fightRules").value,starts_at:$("startTime").value,odds_a:$("oddsA").value,odds_b:$("oddsB").value},"Fight created.");}
+function setFightStatus(){action("/api/admin/fights/"+$("statusFight").value+"/status",{status:$("statusVal").value},"Status saved.");}
+function saveResult(){action("/api/admin/fights/"+$("resFight").value+"/result",{winner_fighter_id:$("resWinner").value,result_method:$("resMethod").value},"Result saved.");}
+function createTournament(){action("/api/admin/tournaments",{event_id:$("tourEvent").value,title:$("tourTitle").value,format:$("tourFormat").value,notes:$("tourNotes").value},"Tournament created.");}
+
+render();
+refresh();
+</script>
+</body>
+</html>
