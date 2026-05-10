@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Fight Club - Fries91
 // @namespace    Fries91.TornFightClub
-// @version      2.1.1
-// @description  Auto-updating Torn Fight Club organizer. Private battle stats with always-visible launcher fix.
+// @version      2.1.2
+// @description  Auto-updating Torn Fight Club organizer. Hard fallback visible launcher fix.
 // @author       Fries91
 // @match        https://www.torn.com/*
 // @match        https://*.torn.com/*
@@ -158,6 +158,35 @@
       .tfc-private-stats{background:linear-gradient(135deg,#111827,#0b0b0b)!important;border-color:#60a5fa!important}
       .tfc-stat-big{font-size:18px!important;font-weight:900!important;color:#fff!important}
       .tfc-stat-grid{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))!important;gap:8px!important;margin-top:8px!important}
+
+      #tfc-hard-launcher {
+        position:fixed!important;
+        top:178px!important;
+        right:6px!important;
+        width:38px!important;
+        height:38px!important;
+        min-width:38px!important;
+        min-height:38px!important;
+        display:flex!important;
+        align-items:center!important;
+        justify-content:center!important;
+        background:#1b0000!important;
+        border:2px solid #ff3434!important;
+        border-radius:10px!important;
+        color:#fff!important;
+        font-size:25px!important;
+        line-height:38px!important;
+        z-index:2147483646!important;
+        box-shadow:0 4px 18px rgba(0,0,0,.85)!important;
+        cursor:pointer!important;
+        opacity:1!important;
+        visibility:visible!important;
+        pointer-events:auto!important;
+      }
+      body.tfc-open #tfc-hard-launcher {
+        z-index:10!important;
+      }
+
       @media(max-width:620px){.tfc-searchbar{grid-template-columns:1fr!important}}
       @media(max-width:620px){
         #tfc-overlay{top:45px!important;width:98vw!important;max-height:88vh!important}
@@ -394,27 +423,58 @@
     return true;
   }
 
+  function makeHardLauncher() {
+    let hard = id('tfc-hard-launcher');
+    if (!hard) {
+      hard = document.createElement('button');
+      hard.id = 'tfc-hard-launcher';
+      hard.type = 'button';
+      hard.textContent = '🥊';
+      hard.title = 'Torn Fight Club';
+      hard.setAttribute('aria-label', 'Torn Fight Club');
+      hard.addEventListener('click', toggle);
+      document.body.appendChild(hard);
+    }
+    return hard;
+  }
+
+  function syncHardLauncherVisibility() {
+    const hard = makeHardLauncher();
+    const mainBtn = id('tfc-header-btn');
+
+    // If the normal header button is visible in a real row, keep hard launcher as backup
+    // but small and still clickable. This proves the script is running.
+    if (mainBtn && mainBtn.getBoundingClientRect().width > 0) {
+      hard.style.opacity = '0.92';
+    }
+  }
+
   function mountHeaderButton() {
     injectCss();
+
+    // Hard fallback first. This is pinned to the visible Torn top area.
+    // If this does not show, the updated userscript is not actually running.
+    makeHardLauncher();
+
     removeBadCopies();
 
     const btn = makeButton();
 
-    // Safety first: put it in the top dock immediately so it never disappears.
-    // After that, try to move it into the real Torn header if a clean slot exists.
+    // Also put the normal button in the top dock immediately.
     placeInEmergencyTopDock(btn);
 
-    // If the user wants it in Torn's header, these attempts move the same button
-    // from the dock into the detected header slot. If detection fails, dock remains.
+    // Try the nice native header locations after the guaranteed launcher exists.
     const bankSlot = getSlot(findBankLeaf());
     if (insertAfterSlot(bankSlot, btn, 'faction-bank-header-slot')) {
       removeDockIfButtonPlaced();
+      syncHardLauncherVisibility();
       return true;
     }
 
     const genderSlot = getSlot(findGenderLeaf());
     if (insertAfterSlot(genderSlot, btn, 'gender-header-slot')) {
       removeDockIfButtonPlaced();
+      syncHardLauncherVisibility();
       return true;
     }
 
@@ -424,6 +484,7 @@
         if (!row.contains(btn)) row.appendChild(btn);
         btn.dataset.lockedTo = 'best-status-header-row';
         removeDockIfButtonPlaced();
+        syncHardLauncherVisibility();
         return true;
       } catch (e) {}
     }
@@ -434,11 +495,13 @@
         if (!mobileRow.contains(btn)) mobileRow.appendChild(btn);
         btn.dataset.lockedTo = 'mobile-browser-icon-row';
         removeDockIfButtonPlaced();
+        syncHardLauncherVisibility();
         return true;
       } catch (e) {}
     }
 
-    // If nothing matched, the icon remains visible in top dock.
+    // If nothing matched, hard launcher and top dock stay visible.
+    syncHardLauncherVisibility();
     return true;
   }
 
@@ -1764,6 +1827,13 @@
     observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  function bootSafe() {
+    if (!document.body) {
+      setTimeout(bootSafe, 100);
+      return;
+    }
+    boot();
+  }
+
+  bootSafe();
 })();
