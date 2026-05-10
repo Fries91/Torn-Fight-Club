@@ -33,6 +33,24 @@ textarea{min-height:90px}.green{background:#064b20;border-color:#20c060}.red{bac
 .mini{background:#0c0c0c;border:1px solid #2a2a2a;border-radius:10px;padding:8px;margin:6px 0}
 .empty{border:1px dashed #555;border-radius:12px;color:#aaa;text-align:center;padding:14px}
 .vs{font-size:22px;font-weight:900;color:#ff4b4b}.rank{font-size:22px;color:#ff4b4b;font-weight:900}
+.ufc-card{background:radial-gradient(circle at top,#3b0000,#101010 52%,#070707);border:1px solid #7f1d1d;border-radius:18px;overflow:hidden;box-shadow:0 16px 40px #000b;margin:10px 0}
+.ufc-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;background:linear-gradient(90deg,#111,#260000,#111);border-bottom:1px solid #7f1d1d}
+.ufc-title{font-size:13px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#fef2f2}
+.ufc-body{padding:12px}
+.ufc-match{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center}
+.ufc-fighter{background:linear-gradient(135deg,#181818,#080808);border:1px solid #333;border-radius:16px;padding:12px;min-height:98px;display:flex;flex-direction:column;justify-content:center}
+.ufc-fighter.left{text-align:left}.ufc-fighter.right{text-align:right}
+.ufc-name{font-size:20px;font-weight:1000;color:#fff;text-shadow:0 0 10px #000;line-height:1.1}
+.ufc-sub{color:#aaa;font-size:12px;margin-top:5px}
+.ufc-vs{display:flex;align-items:center;justify-content:center;width:54px;height:54px;border-radius:50%;border:2px solid #ef4444;background:#150000;color:#fff;font-weight:1000;font-size:18px;box-shadow:0 0 18px #b91c1c99}
+.ufc-details{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:12px}
+.ufc-detail{background:#0a0a0a;border:1px solid #2a2a2a;border-radius:12px;padding:8px}
+.ufc-detail b{color:#ff6969}
+.ufc-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.ufc-winner{margin-top:12px;background:linear-gradient(135deg,#3a2600,#111);border:1px solid #c79a22;border-radius:12px;padding:10px;font-weight:900}
+.ufc-main-event{border-color:#f59e0b;box-shadow:0 0 20px #b4530988,0 16px 40px #000b}
+.ufc-main-event .ufc-head{background:linear-gradient(90deg,#3a2600,#111,#3a0000)}
+@media(max-width:650px){.ufc-match{grid-template-columns:1fr}.ufc-vs{margin:auto;width:46px;height:46px}.ufc-fighter.left,.ufc-fighter.right{text-align:center}.ufc-name{font-size:18px}.ufc-body{padding:10px}}
 .section-title{margin:14px 0 8px;color:#fff;font-size:16px;border-left:4px solid #b40000;padding-left:8px}
 #toast{position:fixed;right:12px;bottom:62px;background:#111;border:1px solid #ff4b4b;border-radius:12px;padding:10px;display:none;z-index:50;max-width:90vw}
 .bottom-quick{position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #8b0000;display:flex;gap:6px;justify-content:center;padding:7px;z-index:40}
@@ -89,7 +107,7 @@ let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
   ok: true, user: null, events: [], fighters: [], fights: [], ideas: [], leaderboard: [],
-  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], challenges: [], alerts: [], my_notifications: [], idea_votes: []
+  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
 };
 
 const ADMINS = [3679030, 1905671];
@@ -232,6 +250,45 @@ function notifications(){
   `;
 }
 
+
+function propsForFight(fightId){
+  return (STATE.fight_props||[]).filter(p=>Number(p.fight_id)===Number(fightId));
+}
+function myPropWager(propId){
+  return (STATE.my_prop_wagers||[]).find(w=>Number(w.prop_id)===Number(propId));
+}
+function propWagerBox(prop){
+  const mine = myPropWager(prop.id);
+  const closed = prop.status !== "open";
+  const options = [
+    ["A", prop.option_a || "Option 1"],
+    ["B", prop.option_b || "Option 2"],
+    ["C", prop.option_c || ""],
+    ["D", prop.option_d || ""]
+  ].filter(x=>String(x[1]||"").trim());
+  const pickedLabel = mine ? (options.find(x=>x[0]===mine.pick_option)||[])[1] : "";
+  const wonText = prop.winning_option === "void" ? "Voided" : ((options.find(x=>x[0]===prop.winning_option)||[])[1] || "");
+  return `<div class="mini">
+    <b>🎲 ${esc(prop.title)}</b>
+    <span class="pill ${closed ? "good" : "warn"}">${esc(prop.status||"open")}</span>
+    ${wonText ? `<span class="pill good">Result: ${esc(wonText)}</span>` : ""}
+    ${mine ? `<div class="muted">Your wager: ${esc(pickedLabel)} for ${esc(mine.points)} pts • ${esc(mine.status||"open")}</div>` : ""}
+    ${!closed && STATE.user ? `
+      <div class="row">
+        <input id="propPts-${prop.id}" type="number" min="1" value="${mine ? esc(mine.points) : 5}" style="max-width:110px" placeholder="Points">
+        ${options.map(o=>`<button class="green" onclick="placePropWager(${prop.id},'${o[0]}')">${esc(o[1])}</button>`).join("")}
+      </div>
+    ` : !STATE.user ? `<button class="blue" onclick="setTab('settings')">Login to wager</button>` : ""}
+    ${isAdmin() && !closed ? `<div class="row">${options.map(o=>`<button class="gold" onclick="resolveProp(${prop.id},'${o[0]}')">Result: ${esc(o[1])}</button>`).join("")}<button onclick="resolveProp(${prop.id},'void')">Void</button><button class="red" onclick="deleteProp(${prop.id})">Delete</button></div>` : ""}
+  </div>`;
+}
+
+function propsForFightHtml(fightId){
+  const props = propsForFight(fightId);
+  if(!props.length) return `<div class="empty">No silly side wagers for this fight yet.</div>`;
+  return props.map(propWagerBox).join("");
+}
+
 function fightCard(f, pick=false){
   const a = f.fighter_a_nick || f.fighter_a_name || "Fighter A";
   const b = f.fighter_b_nick || f.fighter_b_name || "Fighter B";
@@ -294,8 +351,89 @@ function overview(){
   `;
 }
 
+
+function fightStatusClass(status){
+  return status==="live" ? "live" : status==="done" ? "good" : status==="cancelled" ? "" : "warn";
+}
+
+function ufcFightCard(f, index=0){
+  const a = f.fighter_a_nick || f.fighter_a_name || "Fighter A";
+  const b = f.fighter_b_nick || f.fighter_b_name || "Fighter B";
+  const main = index === 0 ? "ufc-main-event" : "";
+  const title = index === 0 ? "MAIN EVENT" : `BOUT ${index + 1}`;
+  const statusCls = fightStatusClass(f.status);
+  const props = typeof propsForFight === "function" ? propsForFight(f.id).length : 0;
+  const proofs = typeof proofsForFight === "function" ? proofsForFight(f.id).length : 0;
+  const checklist = typeof checklistForFight === "function" ? checklistForFight(f.id) : {};
+  const checkDone = ["both_showed","rules_confirmed","fight_started","winner_confirmed","method_confirmed"].filter(k=>Number(checklist[k]||0)===1).length;
+
+  return `
+    <div class="ufc-card ${main}">
+      <div class="ufc-head">
+        <div class="ufc-title">🥊 TORN FIGHT CLUB — ${title}</div>
+        <span class="pill ${statusCls}">${esc(f.status || "scheduled")}</span>
+      </div>
+      <div class="ufc-body">
+        <div class="ufc-match">
+          <div class="ufc-fighter left">
+            <div class="ufc-name">${esc(a)}</div>
+            <div class="ufc-sub">Fighter A ${f.fighter_a_id ? "• ID " + esc(f.fighter_a_id) : ""}</div>
+          </div>
+          <div class="ufc-vs">VS</div>
+          <div class="ufc-fighter right">
+            <div class="ufc-name">${esc(b)}</div>
+            <div class="ufc-sub">Fighter B ${f.fighter_b_id ? "• ID " + esc(f.fighter_b_id) : ""}</div>
+          </div>
+        </div>
+
+        <div class="ufc-details">
+          <div class="ufc-detail"><b>Match</b><br>${esc(f.round_name || "Fight Card")}</div>
+          <div class="ufc-detail"><b>Rules</b><br>${esc(f.rule_set || "Chaos rules")}</div>
+          <div class="ufc-detail"><b>Start</b><br>${esc(f.starts_at || "TBA")}</div>
+          <div class="ufc-detail"><b>Odds</b><br>${esc(f.odds_a || "1.9")} / ${esc(f.odds_b || "1.9")}</div>
+        </div>
+
+        <div class="ufc-actions">
+          <span class="pill">Fight ID ${esc(f.id)}</span>
+          <span class="pill">Side wagers ${props}</span>
+          <span class="pill">Proofs ${proofs}</span>
+          <span class="pill">Ref ${checkDone}/5</span>
+          ${f.spectate_url || proofs ? `<button class="blue" onclick="openSpectateMenu(${f.id})">👀 Watch / Proof</button>` : ""}
+          <button class="gold" onclick="setTab('picks')">Pick / Wager</button>
+        </div>
+
+        ${f.winner_fighter_id ? `<div class="ufc-winner">👑 Winner: ${esc(fighterName(f.winner_fighter_id))} ${f.result_method ? "• " + esc(f.result_method) : ""}</div>` : ""}
+      </div>
+    </div>
+  `;
+}
+
 function fightcard(){
-  return `<div class="card hero"><h3>Fight Card</h3><button onclick="refresh()">Refresh</button></div><div class="grid wide" style="margin-top:10px">${(STATE.fights||[]).map(f=>fightCard(f,false)).join("") || `<div class="empty">No fights yet.</div>`}</div>`;
+  const live = (STATE.fights||[]).filter(f=>f.status==="live");
+  const scheduled = (STATE.fights||[]).filter(f=>f.status==="scheduled");
+  const done = (STATE.fights||[]).filter(f=>f.status==="done");
+  const cancelled = (STATE.fights||[]).filter(f=>f.status==="cancelled");
+  const ordered = [...live, ...scheduled, ...done, ...cancelled];
+
+  return `
+    <div class="card hero">
+      <div class="between">
+        <div>
+          <h3>🥊 UFC-Style Fight Card</h3>
+          <p class="muted">Main event first, then the rest of the bout lineup.</p>
+        </div>
+        <button onclick="refresh()">Refresh</button>
+      </div>
+      <span class="pill live">Live ${live.length}</span>
+      <span class="pill warn">Scheduled ${scheduled.length}</span>
+      <span class="pill good">Done ${done.length}</span>
+      <span class="pill">Cancelled ${cancelled.length}</span>
+    </div>
+
+    <div style="margin-top:10px">
+      ${ordered.length ? ordered.map((f,i)=>ufcFightCard(f,i)).join("") : `<div class="empty">No fights yet.</div>`}
+    </div>
+  `;
 }
 
 function privateStats(){
@@ -561,7 +699,7 @@ function challengeCard(c){
 
 function picks(){
   const open = (STATE.fights||[]).filter(f=>["live","scheduled"].includes(f.status));
-  return `<div class="card hero"><h3>Fun Picks</h3><span class="pill">Your points: ${STATE.user?STATE.user.prediction_points:"Login needed"}</span></div><div class="grid wide" style="margin-top:10px">${open.map(f=>fightCard(f,true)).join("") || `<div class="empty">No open fights.</div>`}</div>`;
+  return `<div class="card hero"><h3>Fun Picks & Silly Side Wagers</h3><span class="pill">Your points: ${STATE.user?STATE.user.prediction_points:"Login needed"}</span><p class="muted">Pick the winner, then throw fun points on dumb fight moments that might happen.</p></div><div class="grid wide" style="margin-top:10px">${open.map(f=>`<div class="card"><h3>${esc(f.fighter_a_nick||f.fighter_a_name||"A")} <span class="vs">VS</span> ${esc(f.fighter_b_nick||f.fighter_b_name||"B")}</h3>${fightCard(f,true)}<h3 style="margin-top:10px">🎲 Silly Side Wagers</h3>${propsForFightHtml(f.id)}</div>`).join("") || `<div class="empty">No open fights.</div>`}</div>`;
 }
 
 function leaderboard(){
@@ -768,6 +906,7 @@ function admin(){
     <div class="section-title">Fights</div>
     <div class="admin-grid">
       <div class="card"><h3>Create Fight</h3><select id="fightEvent">${eventOptions()}</select><select id="fighterA">${fighterOptions("Fighter A")}</select><select id="fighterB">${fighterOptions("Fighter B")}</select><input id="roundName" placeholder="Round"><input id="fightRules" placeholder="Rules"><input id="startTime" placeholder="Start"><input id="spectateUrl" placeholder="Spectate link optional"><input id="oddsA" value="1.9"><input id="oddsB" value="1.9"><button class="green" onclick="createFight()">Create</button></div>
+      <div class="card"><h3>Create Silly Side Wager</h3><select id="propFight">${fightOptions()}</select><input id="propTitle" placeholder="Example: What silly thing happens?"><input id="propA" placeholder="Option 1" value="First crit"><input id="propB" placeholder="Option 2" value="Most misses"><input id="propC" placeholder="Option 3" value="Ends under 10% HP"><input id="propD" placeholder="Option 4" value="Fight ends fast"><button class="green" onclick="createProp()">Create Side Wager</button><div class="muted">Max 4 options. Users wager fun points only. Winners get 2x points back.</div></div>
       <div class="card"><h3>Edit / Delete Fight</h3><select id="editFight">${fightOptions()}</select><input id="editRound" placeholder="New round name"><input id="editRules" placeholder="New rules"><input id="editStart" placeholder="New start"><input id="editSpectate" placeholder="New spectate link"><button class="gold" onclick="updateFight()">Save Fight</button><button class="red" onclick="deleteFight()">Delete Fight</button></div>
       <div class="card"><h3>Set Status</h3><select id="statusFight">${fightOptions()}</select><select id="statusVal"><option>scheduled</option><option>live</option><option>done</option><option>cancelled</option></select><button class="gold" onclick="setFightStatus()">Save</button></div>
       <div class="card"><h3>Save Result</h3><select id="resFight">${fightOptions()}</select><select id="resWinner">${fighterOptions("Winner")}</select><input id="resMethod" placeholder="KO / Lowest HP / Surrender"><button class="red" onclick="saveResult()">Save</button></div>
@@ -1036,6 +1175,35 @@ function registerRef(){
     name:$("refSignupName").value,
     notes:$("refSignupNotes").value
   },"Ref signup saved.");
+}
+
+
+function createProp(){
+  action("/api/admin/props",{
+    fight_id:$("propFight").value,
+    title:$("propTitle").value,
+    option_a:$("propA").value || "Option 1",
+    option_b:$("propB").value || "Option 2",
+    option_c:$("propC").value || "",
+    option_d:$("propD").value || ""
+  },"Silly side wager created.");
+}
+function placePropWager(propId,opt){
+  const pts = $("propPts-"+propId).value;
+  action("/api/props/"+propId+"/wager",{
+    pick_option:opt,
+    points:pts
+  },"Side wager saved.");
+}
+function resolveProp(propId,opt){
+  if(!confirm("Resolve this silly wager?")) return;
+  action("/api/admin/props/"+propId+"/resolve",{
+    winning_option:opt
+  },"Side wager resolved.");
+}
+function deleteProp(propId){
+  if(!confirm("Delete this side wager and refund open wagers?")) return;
+  action("/api/admin/props/"+propId+"/delete",{},"Side wager deleted.");
 }
 
 render();
