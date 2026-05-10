@@ -172,8 +172,10 @@ async function refresh(){
 }
 
 function renderTabs(){
-  const tabs = ["overview","notifications","fightcard","fightLogs","fighters","myfighter","matchmaking","challenges","points","exchange","picks","leaderboard","belts","ideas","rules","settings"];
+  let tabs = ["overview","notifications","fightcard","fightLogs","fighters","myfighter","matchmaking","challenges","points","exchange","picks","leaderboard","belts","ideas","rules","settings"];
   if(isAdmin()){ tabs.push("announcements"); tabs.push("admin"); }
+  const adminOnlyTabs = ["admin","announcements"];
+  if(!isAdmin()) tabs = tabs.filter(t=>!adminOnlyTabs.includes(t));
   const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fightLogs:"Fight Logs",fighters:"Fighters",myfighter:"My Fighter",matchmaking:"Matchmaking",challenges:"Challenges",points:"Points",exchange:"Exchange",picks:"Picks",leaderboard:"Ranks",belts:"Belts",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
@@ -185,6 +187,7 @@ function applyAdminOnlyUi(){
 }
 
 function render(){
+  if(!isAdmin() && ["admin","announcements"].includes(TAB)) TAB="overview";
   maybeBrowserNotify();
   $("userStatus").innerHTML = userLine();
   renderTabs();
@@ -241,7 +244,7 @@ function notifications(){
       ${notificationPill()}
       <div class="row" style="margin-top:8px">
         <button class="green" onclick="requestBrowserNotifications()">Enable Browser Popups</button>
-        <button onclick="markAllNotificationsRead()">Mark All Read</button>
+        <button onclick="markAllNotificationsRead()">Mark All Read</button><button class="red" onclick="clearReadNotifications()">Clear Read</button>
       </div>
     </div>
     <div class="grid wide" style="margin-top:10px">
@@ -343,7 +346,7 @@ function overview(){
         ${top ? `<b>${esc(top.nickname||top.name)}</b><br><span class="pill">Rank ${top.rank_points}</span><span class="pill">Record ${top.record_w}-${top.record_l}</span>` : `<div class="empty">No fighters yet.</div>`}
       </div>
     </div>
-    <div class="card" style="margin-top:10px"><h3>My Notifications</h3>${notificationPill()}${notificationList(3)}</div><div class="card" style="margin-top:10px"><h3>Latest Alerts</h3>${alertsHtml()}</div>
+    <div class="card" style="margin-top:10px"><h3>My Notifications</h3>${notificationPill()}<button class="red" onclick="clearReadNotifications()">Clear Read Notifications</button>${notificationList(3)}</div><div class="card" style="margin-top:10px"><h3>Latest Alerts</h3>${alertsHtml()}</div>
     <div class="card" style="margin-top:10px">
       <h3>Next Fight</h3>
       ${next ? fightCard(next,false) : `<div class="empty">No live or scheduled fight yet.</div>`}
@@ -1020,7 +1023,7 @@ function exchange(){
       <div class="section-title">Admin Reward Slots</div>
       <div class="card">
         <h3>Set 5 Item Reward Slots</h3>
-        <p class="muted">Set item name, amount, point cost, and active status. Users can request active rewards only.</p>
+        <p class="muted">Admin only: configure what rewards users can request with points.</p>
         ${[1,2,3,4,5].map(n=>{
           const s = (STATE.reward_slots||[]).find(x=>Number(x.slot)===n) || {slot:n,item_name:"",item_amount:1,points_cost:0,reward_note:"",is_active:0};
           return `<div class="mini">
@@ -1067,7 +1070,7 @@ function points(){
     </div>
 
     ${isAdmin()?`
-      <div class="section-title">Admin Point Settings</div>
+      <div class="section-title">Admin Point Controls</div>
       <div class="grid wide">
         <div class="card">
           <h3>Set Exchange Rate</h3>
@@ -1120,7 +1123,7 @@ function settings(){
       </div>
 
       <div class="card">
-        <h3>Storage & Lockdown</h3>
+        <h3>Storage & Lockdown</h3><div class="mini"><b>Role Lockdown:</b> normal users can join, queue, pick, request points/rewards, and submit logs. Only admins can create fights, create side wagers, approve purchases, configure rewards, review logs, and manage event setup.</div>
         <p class="muted">The app stores only what it needs to run Fight Club.</p>
         <div class="mini">Stored locally on your device: app login token / saved API login state.</div>
         <div class="mini">Stored on the backend: Torn ID, display name, fighter profile, ref signup, points, picks, queue status, requests, and notifications.</div>
@@ -1163,7 +1166,8 @@ function settings(){
 }
 
 function admin(){
-  return `
+  if(!isAdmin()) return `<div class="card hero"><h3>Admin Locked</h3><p class="muted">Admin only.</p></div>`;
+return `
     <div class="card hero">
       <h3>Admin Control Center</h3>
       <p class="muted">Create, edit, delete, and manage the entire Fight Club app.</p>
@@ -1558,6 +1562,12 @@ function reviewFightLog(logId,status){
     admin_note:$("fightLogNote-"+logId) ? $("fightLogNote-"+logId).value : "",
     update_fight:$("fightLogUpdate-"+logId) ? $("fightLogUpdate-"+logId).checked : true
   },"Fight log reviewed.");
+}
+
+
+function clearReadNotifications(){
+  if(!confirm("Remove all read notifications? Unread notifications will stay.")) return;
+  action("/api/notifications/clear-read",{},"Read notifications cleared.");
 }
 
 render();
