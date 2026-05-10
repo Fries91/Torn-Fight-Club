@@ -121,9 +121,9 @@ async function refresh(){
 }
 
 function renderTabs(){
-  const tabs = ["overview","notifications","fightcard","fighters","myfighter","challenges","picks","leaderboard","tournaments","belts","teams","refs","announcements","ideas","rules","settings"];
+  const tabs = ["overview","notifications","fightcard","fighters","myfighter","challenges","picks","leaderboard","belts","refs","announcements","ideas","rules","settings"];
   if(isAdmin()) tabs.push("admin");
-  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fighters:"Fighters",myfighter:"My Fighter",challenges:"Challenges",picks:"Picks",leaderboard:"Ranks",tournaments:"Brackets",belts:"Belts",teams:"Teams",refs:"Refs",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
+  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fighters:"Fighters",myfighter:"My Fighter",challenges:"Challenges",picks:"Picks",leaderboard:"Ranks",belts:"Belts",refs:"Refs",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
 
@@ -131,7 +131,7 @@ function render(){
   maybeBrowserNotify();
   $("userStatus").innerHTML = userLine();
   renderTabs();
-  const pages = {overview, notifications, fightcard, fighters, myfighter, challenges, picks, leaderboard, tournaments, belts, teams, refs, announcements, ideas, rules, settings, admin};
+  const pages = {overview, notifications, fightcard, fighters, myfighter, challenges, picks, leaderboard, belts, refs, announcements, ideas, rules, settings, admin};
   $("app").innerHTML = (pages[TAB] || overview)();
 }
 
@@ -238,7 +238,7 @@ function overview(){
         <span class="pill good">Done ${fights("done").length}</span>
         <span class="pill">Fighters ${(STATE.fighters||[]).length}</span>
         <span class="pill">Belts ${(STATE.belts||[]).length}</span>
-        <span class="pill">Teams ${(STATE.teams||[]).length}</span>
+        
       </div>
       <div class="card">
         <h3>Top Fighter</h3>
@@ -844,7 +844,7 @@ function admin(){
     <div class="card hero">
       <h3>Admin Control Center</h3>
       <p class="muted">Create, edit, delete, and manage the entire Fight Club app.</p>
-      <div class="row"><button onclick="setTab('tournaments')">Brackets</button><button onclick="setTab('belts')">Belts</button><button onclick="setTab('teams')">Teams</button><button onclick="setTab('refs')">Refs / Checklists</button></div>
+      <div class="row"><button onclick="setTab('belts')">Belts</button><button onclick="setTab('refs')">Refs / Checklists</button></div>
     </div>
 
     <div class="section-title">Events</div>
@@ -869,11 +869,6 @@ function admin(){
     <div class="section-title">Belts</div>
     <div class="admin-grid">
       <div class="card belt"><h3>Edit / Delete Belt</h3><select id="editBelt">${beltOptions()}</select><input id="editBeltName" placeholder="Belt name"><input id="editBeltDivision" placeholder="Division"><select id="editBeltHolder">${fighterOptions("Holder / vacant")}</select><select id="editBeltStatus"><option value="">Leave status</option><option value="active">Active</option><option value="retired">Retired</option><option value="vacant">Vacant</option></select><button class="gold" onclick="updateBelt()">Save Belt</button><button class="red" onclick="deleteBelt()">Delete Belt</button></div>
-    </div>
-
-    <div class="section-title">Teams</div>
-    <div class="admin-grid">
-      <div class="card team"><h3>Edit / Delete Team</h3><select id="editTeam">${teamOptions()}</select><input id="editTeamName" placeholder="Team name"><input id="editTeamCaptain" placeholder="Captain Torn ID"><input id="editTeamMembers" placeholder="Members comma separated"><input id="editTeamNotes" placeholder="Notes"><button class="gold" onclick="updateTeam()">Save Team</button><button class="red" onclick="deleteTeam()">Delete Team</button></div>
     </div>
 
     <div class="section-title">Refs</div>
