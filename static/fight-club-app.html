@@ -170,7 +170,8 @@ function render(){
   maybeBrowserNotify();
   $("userStatus").innerHTML = userLine();
   renderTabs();
-  const pages = {overview, notifications, fightcard, fighters, myfighter, challenges, picks, leaderboard, belts, refs, announcements, ideas, rules, settings, admin};
+  const pages = {overview, notifications, fightcard, fighters, myfighter, challenges, picks, leaderboard, belts, refs, ideas, rules, settings, admin};
+  if(typeof announcements === "function") pages.announcements = announcements;
   $("app").innerHTML = (pages[TAB] || overview)();
   applyAdminOnlyUi();
 }
@@ -652,6 +653,90 @@ function refs(){
       ${(STATE.referees||[]).map(r=>`<div class="card ref"><h3>⚖️ ${esc(r.name)}</h3><div class="muted">Torn ID ${esc(r.torn_id||"unset")} • ${esc(r.status||"pending")}</div><div>${esc(r.notes||"")}</div></div>`).join("") || `<div class="empty">No refs signed up yet.</div>`}
     </div>
   `;
+}
+
+
+function announcements(){
+  if(!isAdmin()){
+    return `<div class="card hero"><h3>Posts</h3><div class="empty">Admin only.</div></div>`;
+  }
+  const fightOptionsHtml = fightOptions();
+  const tournamentOptionsHtml = typeof tournamentOptions === "function" ? tournamentOptions() : `<option value="">No tournaments</option>`;
+  const beltOptionsHtml = typeof beltOptions === "function" ? beltOptions() : `<option value="">No belts</option>`;
+  return `
+    <div class="card hero">
+      <h3>📣 Posts / Announcement Generator</h3>
+      <p class="muted">Admin-only copy/paste posts for Fight Club.</p>
+    </div>
+    <div class="grid wide" style="margin-top:10px">
+      <div class="card">
+        <h3>Build Post</h3>
+        <select id="announceType" onchange="updateAnnouncementSafe()">
+          <option value="fight">Upcoming fight post</option>
+          <option value="winner">Winner/result post</option>
+          <option value="tournament">Tournament/bracket post</option>
+          <option value="belt">Belt announcement</option>
+          <option value="recruit">Recruitment / welcome post</option>
+        </select>
+        <label class="muted">Fight</label>
+        <select id="announceFight" onchange="updateAnnouncementSafe()">${fightOptionsHtml}</select>
+        <label class="muted">Tournament</label>
+        <select id="announceTournament" onchange="updateAnnouncementSafe()">${tournamentOptionsHtml}</select>
+        <label class="muted">Belt</label>
+        <select id="announceBelt" onchange="updateAnnouncementSafe()">${beltOptionsHtml}</select>
+        <button class="gold" onclick="updateAnnouncementSafe()">Generate</button>
+        <button class="green" onclick="copyAnnouncementSafe()">Copy Post</button>
+      </div>
+      <div class="card">
+        <h3>Post Preview</h3>
+        <textarea id="announceOutput" style="min-height:360px"></textarea>
+      </div>
+    </div>
+  `;
+}
+
+function updateAnnouncementSafe(){
+  const out = $("announceOutput");
+  if(!out) return;
+  const type = $("announceType") ? $("announceType").value : "recruit";
+  let text = "";
+  if(type === "fight" || type === "winner"){
+    const f = (STATE.fights||[]).find(x=>Number(x.id)===Number($("announceFight").value));
+    if(!f){
+      text = "No fight selected.";
+    }else{
+      const a = f.fighter_a_nick || f.fighter_a_name || "Fighter A";
+      const b = f.fighter_b_nick || f.fighter_b_name || "Fighter B";
+      if(type === "winner"){
+        text = `@everyone 🏆🥊\n\nTORN FIGHT CLUB RESULT\n\n${a} VS ${b}\n\n👑 Winner: ${f.winner_fighter_id ? fighterName(f.winner_fighter_id) : "Winner not set yet"}\n💀 Result Method: ${f.result_method || "TBA"}\n📋 Match: ${f.round_name || "Fight Card"}\n🎭 Rules: ${f.rule_set || "Chaos rules"}\n\nFirst rule of Fight Club...\nYou ABSOLUTELY talk about Fight Club.`;
+      }else{
+        text = `@everyone 🥊🔥\n\nTHE TORN FIGHT CLUB\n\nNEXT FIGHT:\n${a} VS ${b}\n\n📋 Match: ${f.round_name || "Fight Card"}\n🎭 Rules: ${f.rule_set || "Chaos rules"}\n⏰ Start: ${f.starts_at || "TBA"}\n\nFirst rule of Fight Club...\nYou ABSOLUTELY talk about Fight Club.`;
+      }
+    }
+  }else if(type === "belt"){
+    const b = (STATE.belts||[]).find(x=>Number(x.id)===Number($("announceBelt").value));
+    text = b ? `@everyone 👑🥊\n\nTORN FIGHT CLUB BELT\n\n🏆 Belt: ${b.name}\n🎭 Division: ${b.division || "Open"}\n👑 Holder: ${b.holder_fighter_id ? (b.holder_nick || b.holder_name || "Holder") : "Vacant"}\n\nChallenge them. Call them out. Make it chaotic.` : "No belt selected.";
+  }else if(type === "tournament"){
+    const t = (STATE.tournaments||[]).find(x=>Number(x.id)===Number($("announceTournament").value));
+    text = t ? `@everyone 🏆🥊\n\nTORN FIGHT CLUB TOURNAMENT\n\n📛 Tournament: ${t.title}\n🎭 Format: ${t.format || "Chaos bracket"}\n📋 Status: ${t.status || "planned"}\n📝 Notes: ${t.notes || "No notes yet."}` : "No tournament selected.";
+  }else{
+    text = `@everyone 🥊🔥\n\nWELCOME TO THE TORN FIGHT CLUB\n\nLooking for:\n🥊 Fighters\n⚖️ Referees\n😂 Funny fight ideas\n👀 Spectators\n\nFirst rule of Fight Club...\nYou ABSOLUTELY talk about Fight Club.`;
+  }
+  out.value = text;
+}
+
+function copyAnnouncementSafe(){
+  const box = $("announceOutput");
+  if(!box){toast("Nothing to copy.");return;}
+  box.focus();
+  box.select();
+  try{
+    navigator.clipboard.writeText(box.value);
+    toast("Announcement copied.");
+  }catch(e){
+    document.execCommand("copy");
+    toast("Announcement copied.");
+  }
 }
 
 function ideas(){
