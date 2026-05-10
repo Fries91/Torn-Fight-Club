@@ -197,6 +197,19 @@ def init_db():
 
 
 
+
+            CREATE TABLE IF NOT EXISTS user_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_torn_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT,
+                notification_type TEXT NOT NULL DEFAULT 'info',
+                related_fight_id INTEGER,
+                related_challenge_id INTEGER,
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS challenges (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 challenger_fighter_id INTEGER NOT NULL,
@@ -419,12 +432,37 @@ def torn_basic_from_key(api_key):
     return torn_id, name, None, stat_error
 
 
+
+def create_user_notification(con, user_torn_id, title, body="", notification_type="info", fight_id=None, challenge_id=None):
+    if not user_torn_id:
+        return
+    con.execute("""
+        INSERT INTO user_notifications(user_torn_id, title, body, notification_type, related_fight_id, related_challenge_id, is_read, created_at)
+        VALUES(?,?,?,?,?,?,0,?)
+    """, (int(user_torn_id), title[:120], body[:700], notification_type[:40], fight_id, challenge_id, now_iso()))
+
+
+def notify_challenge_fighters(con, challenge_id, title, body, notification_type="challenge", fight_id=None):
+    c = con.execute("""
+        SELECT c.*, cf.torn_id AS challenger_torn_id, tf.torn_id AS target_torn_id,
+               cf.nickname AS challenger_nick, cf.name AS challenger_name,
+               tf.nickname AS target_nick, tf.name AS target_name
+        FROM challenges c
+        JOIN fighters cf ON cf.id=c.challenger_fighter_id
+        JOIN fighters tf ON tf.id=c.target_fighter_id
+        WHERE c.id=?
+    """, (challenge_id,)).fetchone()
+    if not c:
+        return
+    create_user_notification(con, c["challenger_torn_id"], title, body, notification_type, fight_id, challenge_id)
+    create_user_notification(con, c["target_torn_id"], title, body, notification_type, fight_id, challenge_id)
+
 @app.get("/")
 def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.0.0",
+        "version": "4.1.0",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -530,6 +568,7 @@ def state():
         """).fetchall()]
 
         predictions = []
+        my_notifications = []
         if token_user:
             predictions = [dict(x) for x in con.execute("""
                 SELECT p.*, f.status
@@ -537,6 +576,13 @@ def state():
                 JOIN fights f ON f.id=p.fight_id
                 WHERE p.user_torn_id=?
                 ORDER BY p.id DESC
+            """, (token_user["torn_id"],)).fetchall()]
+            my_notifications = [dict(x) for x in con.execute("""
+                SELECT *
+                FROM user_notifications
+                WHERE user_torn_id=?
+                ORDER BY id DESC
+                LIMIT 50
             """, (token_user["torn_id"],)).fetchall()]
 
         tournaments = [dict(x) for x in con.execute("SELECT * FROM tournaments ORDER BY id DESC").fetchall()]
@@ -587,6 +633,7 @@ def state():
         "ideas": ideas,
         "leaderboard": leaderboard,
         "my_predictions": predictions,
+        "my_notifications": my_notifications,
         "tournaments": tournaments,
         "tournament_entries": entries,
         "belts": belts,
@@ -1421,6 +1468,22 @@ def set_challenge_status(challenge_id):
 
     with db() as con:
         con.execute("UPDATE challenges SET status=?, resolved_by=?, resolved_at=? WHERE id=?", (status, request.user["torn_id"], now_iso(), challenge_id))
+        if status == "approved":
+            notify_challenge_fighters(
+                con,
+                challenge_id,
+                "🥊 Challenge approved!",
+                "Your Fight Club challenge was approved by admin. Watch the Fight Card for scheduling.",
+                "challenge_approved"
+            )
+        elif status == "rejected":
+            notify_challenge_fighters(
+                con,
+                challenge_id,
+                "Challenge rejected",
+                "Your Fight Club challenge was rejected by admin.",
+                "challenge_rejected"
+            )
         audit(con, request.user["torn_id"], "set_challenge_status", f"challenge:{challenge_id}", {"status": status})
 
     return jsonify({"ok": True})
@@ -1447,6 +1510,14 @@ def convert_challenge_to_fight(challenge_id):
         """, (event_id, c["challenger_fighter_id"], c["target_fighter_id"], "scheduled", round_name, rule_set, 1.9, 1.9, starts_at, spectate_url, None, now_iso()))
         fight_id = cur.lastrowid
         con.execute("UPDATE challenges SET status='converted', resolved_by=?, resolved_at=? WHERE id=?", (request.user["torn_id"], now_iso(), challenge_id))
+        notify_challenge_fighters(
+            con,
+            challenge_id,
+            "🥊 Fight scheduled!",
+            f"Your challenge has been converted into Fight #{fight_id}: {round_name}. Start: {starts_at or 'TBA'}.",
+            "fight_scheduled",
+            fight_id=fight_id
+        )
         audit(con, request.user["torn_id"], "convert_challenge_to_fight", f"challenge:{challenge_id}", {"fight_id": fight_id})
 
     return jsonify({"ok": True, "fight_id": fight_id})
@@ -1476,6 +1547,21 @@ def delete_alert(alert_id):
     with db() as con:
         con.execute("DELETE FROM alerts WHERE id=?", (alert_id,))
         audit(con, request.user["torn_id"], "delete_alert", f"alert:{alert_id}", {})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/notifications/read")
+@require_login
+def mark_notifications_read():
+    data = request.get_json(force=True, silent=True) or {}
+    notification_id = data.get("notification_id")
+
+    with db() as con:
+        if notification_id:
+            con.execute("UPDATE user_notifications SET is_read=1 WHERE id=? AND user_torn_id=?", (int(notification_id), request.user["torn_id"]))
+        else:
+            con.execute("UPDATE user_notifications SET is_read=1 WHERE user_torn_id=?", (request.user["torn_id"],))
+
     return jsonify({"ok": True})
 
 
