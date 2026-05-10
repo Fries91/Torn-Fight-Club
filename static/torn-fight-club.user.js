@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Fight Club - Fries91
 // @namespace    Fries91.TornFightClub
-// @version      2.0.0
-// @description  Auto-updating Torn Fight Club organizer. Phases 3 and 4: tournaments, belts, refs, teams, and admin edit tools.
+// @version      2.1.0
+// @description  Auto-updating Torn Fight Club organizer. Private battle stats shown only to the logged-in fighter.
 // @author       Fries91
 // @match        https://www.torn.com/*
 // @match        https://*.torn.com/*
@@ -135,6 +135,9 @@
       .tfc-bracket-entry{border:1px solid #444!important;background:#0a0a0a!important;border-radius:10px!important;padding:8px!important}
       .tfc-belt{background:linear-gradient(135deg,#3a2600,#111)!important;border-color:#c79a22!important}
       .tfc-ref{background:linear-gradient(135deg,#081b2f,#111)!important;border-color:#3aa5ff!important}
+      .tfc-private-stats{background:linear-gradient(135deg,#111827,#0b0b0b)!important;border-color:#60a5fa!important}
+      .tfc-stat-big{font-size:18px!important;font-weight:900!important;color:#fff!important}
+      .tfc-stat-grid{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))!important;gap:8px!important;margin-top:8px!important}
       @media(max-width:620px){.tfc-searchbar{grid-template-columns:1fr!important}}
       @media(max-width:620px){
         #tfc-overlay{top:45px!important;width:98vw!important;max-height:88vh!important}
@@ -675,6 +678,65 @@
     `;
   }
 
+
+  function formatStat(n) {
+    try {
+      const num = Number(n || 0);
+      return num.toLocaleString();
+    } catch (e) {
+      return String(n || 0);
+    }
+  }
+
+  function getPrivateBattleStats() {
+    try {
+      const raw = GM_getValue('tfc_private_battle_stats', '');
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function setPrivateBattleStats(stats) {
+    if (!stats) return;
+    try {
+      GM_setValue('tfc_private_battle_stats', JSON.stringify(stats));
+    } catch (e) {}
+  }
+
+  function clearPrivateBattleStats() {
+    try {
+      GM_setValue('tfc_private_battle_stats', '');
+    } catch (e) {}
+  }
+
+  function privateBattleStatsBox() {
+    const stats = getPrivateBattleStats();
+    if (!stats) {
+      return `
+        <div class="tfc-card tfc-private-stats">
+          <h3>🔒 My Private Battle Stats</h3>
+          <div class="tfc-empty">No battle stats loaded yet. Login with an API key that has access to your battle stats.</div>
+          <div class="tfc-muted">Only you can see this box on your own device. These stats are not shown on public fighter cards.</div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="tfc-card tfc-private-stats">
+        <h3>🔒 My Private Battle Stats</h3>
+        <div class="tfc-muted">Only visible to you on this device after API login. Not shown to other users.</div>
+        <div class="tfc-stat-grid">
+          <div class="tfc-mini-item"><div class="tfc-muted">Strength</div><div class="tfc-stat-big">${formatStat(stats.strength)}</div></div>
+          <div class="tfc-mini-item"><div class="tfc-muted">Defense</div><div class="tfc-stat-big">${formatStat(stats.defense)}</div></div>
+          <div class="tfc-mini-item"><div class="tfc-muted">Speed</div><div class="tfc-stat-big">${formatStat(stats.speed)}</div></div>
+          <div class="tfc-mini-item"><div class="tfc-muted">Dexterity</div><div class="tfc-stat-big">${formatStat(stats.dexterity)}</div></div>
+          <div class="tfc-mini-item"><div class="tfc-muted">Total Battle Stats</div><div class="tfc-stat-big">${formatStat(stats.total)}</div></div>
+        </div>
+      </div>
+    `;
+  }
+
   function myFighterProfiles(s) {
     if (!s.user) return [];
     return (s.fighters || []).filter(f => Number(f.torn_id) === Number(s.user.torn_id));
@@ -724,6 +786,8 @@
             <div class="tfc-muted">Register once you are ready to get bonked by pillows in public.</div>
           `}
         </div>
+
+        ${privateBattleStatsBox()}
       </div>
 
       <div class="tfc-card" style="margin-top:10px">
@@ -1267,7 +1331,7 @@
       <div class="tfc-grid wide">
         <div class="tfc-card hero">
           <h3>🔐 API Key Login</h3>
-          <p class="tfc-muted">Used only to identify your Torn player so you can register, make picks, submit ideas, and get the right access level.</p>
+          <p class="tfc-muted">Used only to identify your Torn player so you can register, make picks, submit ideas, and get the right access level. If your key allows battle stats, it will also show your private total battle stats only to you.</p>
           <input id="tfc-api" class="tfc-input" placeholder="Paste Torn limited API key">
           <button id="tfc-login" class="tfc-btn green">Login</button>
           <button id="tfc-logout" class="tfc-btn">Logout</button>
@@ -1293,9 +1357,11 @@
           <p>This app is built around a <b>limited API key</b>. It only uses the key to confirm who you are in Torn.</p>
           <div class="tfc-mini-list">
             <div class="tfc-mini-item">✅ Reads basic identity so the app can show your Torn name and player ID.</div>
+            <div class="tfc-mini-item">✅ If your key permits it, reads your battle stats once on login so only you can see your private stat box.</div>
             <div class="tfc-mini-item">✅ Uses your identity for fighter registration, picks, ideas, and admin checks.</div>
             <div class="tfc-mini-item">✅ Admin access is checked by Torn ID: Fries91 [3679030] and Slimyfleshlite [1905671].</div>
             <div class="tfc-mini-item">❌ The app does not use your key to move money, send items, attack, trade, message, or change your Torn account.</div>
+            <div class="tfc-mini-item">❌ Battle stats are not posted to public leaderboards, public fighter cards, or other users’ overlays.</div>
             <div class="tfc-mini-item">❌ Your key is not shown to other users in the overlay.</div>
             <div class="tfc-mini-item">📌 Use a limited key where possible, keep your key private, and revoke/regenerate it if you ever think it was shared somewhere it should not be.</div>
           </div>
@@ -1413,6 +1479,14 @@
       if(!r.ok) return alert(r.error || 'Login failed');
       APP.token = r.token;
       GM_setValue('tfc_token', APP.token);
+      if (r.private_battle_stats) {
+        setPrivateBattleStats(r.private_battle_stats);
+      } else {
+        clearPrivateBattleStats();
+        if (r.battle_stats_error) {
+          alert('Login worked, but battle stats were not available with this key: ' + r.battle_stats_error);
+        }
+      }
       await refresh();
       renderTabs();
       render();
@@ -1421,6 +1495,7 @@
     on('tfc-logout', async () => {
       APP.token='';
       GM_setValue('tfc_token','');
+      clearPrivateBattleStats();
       await refresh().catch(()=>null);
       renderTabs();
       render();
