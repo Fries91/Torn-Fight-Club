@@ -573,259 +573,46 @@ function teams(){
 }
 
 function refs(){
+  const myRef = STATE.user ? (STATE.referees||[]).find(r=>Number(r.torn_id||0)===Number(STATE.user.torn_id)) : null;
   return `
     <div class="card hero">
-      <h3>Refs</h3>
-      <p class="muted">Add referees and use fight checklists to confirm the match was run properly.</p>
+      <h3>⚖️ Ref Sign Up</h3>
+      <p class="muted">Want to help run Fight Club nights? Sign up here to become a ref.</p>
+      <span class="pill">Confirm rules</span>
+      <span class="pill">Confirm winners</span>
+      <span class="pill">Help keep fights fair</span>
     </div>
-
-    ${isAdmin()?`
-      <div class="admin-grid" style="margin-top:10px">
-        <div class="card ref"><h3>Add Referee</h3><select id="refEvent">${eventOptions()}</select><input id="refName" placeholder="Referee name"><input id="refTorn" placeholder="Torn ID optional"><input id="refNotes" placeholder="Notes / duties"><button class="green" onclick="createRef()">Add Ref</button></div>
-        <div class="card ref"><h3>Fight Ref Checklist</h3><select id="checkFight" onchange="loadChecklistForm()">${fightOptions()}</select><div id="checkForm">${checklistFormHtml(null)}</div></div>
-        <div class="card ref"><h3>Fight Proof / Report Links</h3><select id="proofFight" onchange="loadProofBox()">${fightOptions()}</select><select id="proofType"><option value="battle_report">Battle report</option><option value="screenshot">Screenshot</option><option value="spectate">Spectate/watch</option><option value="note">Ref note</option><option value="dispute">Dispute note</option></select><input id="proofTitle" placeholder="Proof title"><input id="proofUrl" placeholder="Proof/report/screenshot URL optional"><textarea id="proofNotes" placeholder="Notes / reason / proof details"></textarea><button class="green" onclick="addProof()">Add Proof</button><div id="proofBox">${proofListHtml(0,true)}</div></div>
-      </div>`:""}
 
     <div class="grid wide" style="margin-top:10px">
-      ${(STATE.referees||[]).map(r=>`<div class="card ref"><h3>⚖️ ${esc(r.name)}</h3><div class="muted">Torn ID ${esc(r.torn_id||"unset")} • ${esc(r.status||"active")}</div><div>${esc(r.notes||"")}</div></div>`).join("") || `<div class="empty">No refs yet.</div>`}
+      <div class="card ref">
+        <h3>Register as Ref</h3>
+        ${STATE.user ? `
+          ${myRef ? `<div class="pill good">You are signed up as a ref: ${esc(myRef.status||"pending")}</div>` : `<div class="pill warn">You are not signed up yet.</div>`}
+          <select id="refSignupEvent">${eventOptions()}</select>
+          <input id="refSignupName" placeholder="Ref name" value="${esc(STATE.user.name||"")}">
+          <textarea id="refSignupNotes" placeholder="Notes, availability, fight types you can ref">${esc(myRef ? (myRef.notes||"") : "")}</textarea>
+          <button class="green" onclick="registerRef()">Sign Up / Update</button>
+        ` : `
+          <div class="empty">Login first to sign up as a ref.</div>
+          <button class="blue" onclick="setTab('settings')">Go to Settings</button>
+        `}
+      </div>
+
+      <div class="card ref">
+        <h3>What Refs Do</h3>
+        <div class="mini">Make sure both fighters understand the fight rules.</div>
+        <div class="mini">Watch the result and help confirm the winner.</div>
+        <div class="mini">Help admin keep events organized and fair.</div>
+        <div class="mini">Add notes if something weird happens.</div>
+      </div>
     </div>
 
-    <div class="section-title">Fight Checklist Status</div>
+    <div class="section-title">Registered Refs</div>
     <div class="grid wide">
-      ${(STATE.fights||[]).map(f=>`<div class="card"><h3>${esc(f.round_name||"Fight")} <span class="pill">ID ${f.id}</span></h3><div>${esc(f.fighter_a_nick||f.fighter_a_name||"A")} vs ${esc(f.fighter_b_nick||f.fighter_b_name||"B")}</div>${checklistSummary(f.id)}${proofSummary(f.id)}<div class="muted">${esc((checklistForFight(f.id).notes)||"No ref notes yet.")}</div><div style="margin-top:8px">${proofListHtml(f.id,false)}</div></div>`).join("") || `<div class="empty">No fights yet.</div>`}
+      ${(STATE.referees||[]).map(r=>`<div class="card ref"><h3>⚖️ ${esc(r.name)}</h3><div class="muted">Torn ID ${esc(r.torn_id||"unset")} • ${esc(r.status||"pending")}</div><div>${esc(r.notes||"")}</div></div>`).join("") || `<div class="empty">No refs signed up yet.</div>`}
     </div>
   `;
 }
-
-function checklistFormHtml(fightId){
-  if(!fightId) return `<div class="empty">Choose a fight to load checklist.</div>`;
-  const c = checklistForFight(fightId);
-  return `
-    <div class="grid" style="grid-template-columns:1fr">
-      ${checkbox("chkBothShowed","Both fighters showed up", Number(c.both_showed||0)===1)}
-      ${checkbox("chkRules","Rules/loadout confirmed", Number(c.rules_confirmed||0)===1)}
-      ${checkbox("chkStarted","Fight started", Number(c.fight_started||0)===1)}
-      ${checkbox("chkWinner","Winner confirmed", Number(c.winner_confirmed||0)===1)}
-      ${checkbox("chkMethod","Result method confirmed", Number(c.method_confirmed||0)===1)}
-      <textarea id="chkNotes" placeholder="Ref notes / proof / links">${esc(c.notes||"")}</textarea>
-      <button class="gold" onclick="saveChecklist()">Save Checklist</button>
-    </div>
-  `;
-}
-
-function loadChecklistForm(){
-  const id = $("checkFight").value;
-  $("checkForm").innerHTML = checklistFormHtml(id);
-}
-
-
-function copyAnnouncement(){
-  const box = $("announceOutput");
-  if(!box){toast("Nothing to copy.");return;}
-  box.focus();
-  box.select();
-  try{
-    navigator.clipboard.writeText(box.value);
-    toast("Announcement copied.");
-  }catch(e){
-    document.execCommand("copy");
-    toast("Announcement copied.");
-  }
-}
-
-function fightAnnouncementText(f){
-  if(!f) return "No fight selected.";
-  const a = f.fighter_a_nick || f.fighter_a_name || "Fighter A";
-  const b = f.fighter_b_nick || f.fighter_b_name || "Fighter B";
-  const spectate = f.spectate_url ? "\n👀 Spectate: " + f.spectate_url : "";
-  return `@everyone 🥊🔥
-
-WELCOME TO THE TORN FIGHT CLUB
-
-NEXT FIGHT:
-${a} VS ${b}
-
-📋 Match: ${f.round_name || "Fight Card"}
-🎭 Rules: ${f.rule_set || "Chaos rules"}
-⏰ Start: ${f.starts_at || "TBA"}
-💰 Fun odds: ${f.odds_a || "1.9"} / ${f.odds_b || "1.9"}${spectate}
-
-No real Torn money/items betting.
-Prediction points only.
-First rule of Fight Club...
-
-You ABSOLUTELY talk about Fight Club.`;
-}
-
-function winnerAnnouncementText(f){
-  if(!f) return "No fight selected.";
-  const a = f.fighter_a_nick || f.fighter_a_name || "Fighter A";
-  const b = f.fighter_b_nick || f.fighter_b_name || "Fighter B";
-  const winner = f.winner_fighter_id ? fighterName(f.winner_fighter_id) : "Winner not set yet";
-  return `@everyone 🏆🥊
-
-TORN FIGHT CLUB RESULT
-
-${a} VS ${b}
-
-👑 Winner: ${winner}
-💀 Result Method: ${f.result_method || "TBA"}
-📋 Match: ${f.round_name || "Fight Card"}
-🎭 Rules: ${f.rule_set || "Chaos rules"}
-
-Respect to both fighters for entering the arena.
-
-First rule of Fight Club...
-You ABSOLUTELY talk about Fight Club.`;
-}
-
-function tournamentAnnouncementText(t){
-  if(!t) return "No tournament selected.";
-  const entries = (STATE.tournament_entries||[]).filter(e=>Number(e.tournament_id)===Number(t.id));
-  const list = entries.length ? entries.map((e,i)=>`${i+1}. ${e.nickname || e.name} [${e.torn_id}]`).join("\n") : "No fighters entered yet.";
-  return `@everyone 🏆🥊
-
-TORN FIGHT CLUB TOURNAMENT
-
-📛 Tournament: ${t.title}
-🎭 Format: ${t.format || "Chaos bracket"}
-📋 Status: ${t.status || "planned"}
-📝 Notes: ${t.notes || "No notes yet."}
-
-FIGHTERS:
-${list}
-
-Who is walking out with bragging rights?
-
-First rule of Fight Club...
-You ABSOLUTELY talk about Fight Club.`;
-}
-
-function beltAnnouncementText(b){
-  if(!b) return "No belt selected.";
-  const holder = b.holder_fighter_id ? `${b.holder_nick || b.holder_name} [${b.holder_torn_id || ""}]` : "Vacant";
-  return `@everyone 👑🥊
-
-TORN FIGHT CLUB CHAMPIONSHIP BELT
-
-🏆 Belt: ${b.name}
-🎭 Division: ${b.division || "Open Chaos"}
-👑 Current Holder: ${holder}
-
-This belt is now officially part of Fight Club history.
-
-Challenge them.
-Call them out.
-Make it chaotic.
-
-First rule of Fight Club...
-You ABSOLUTELY talk about Fight Club.`;
-}
-
-function recruitmentAnnouncementText(){
-  return `@everyone 🥊🔥
-
-WELCOME TO THE IDEA OF...
-
-THE TORN FIGHT CLUB
-
-Not just another tournament.
-Not just another betting game.
-
-A community-run underground fight league built for entertainment, chaos, rivalries, rankings, and stupidly funny loadouts.
-
-Looking for:
-🥊 Fighters
-📋 Organizers
-⚖️ Referees
-😂 People with dumb/funny ideas
-👀 Spectators
-
-Fight ideas:
-🛏️ Pillow fight championships
-⚔️ Only melee nights
-🎲 Randomized gear battles
-👑 King of the Hill
-💀 Last Man Standing
-🏆 Championship belts
-⚔️ Faction vs faction events
-
-No real Torn money/items betting through the app.
-Prediction points only.
-
-If you would join, reply or DM.
-
-First rule of Fight Club...
-You ABSOLUTELY talk about Fight Club.`;
-}
-
-function updateAnnouncement(){
-  const type = $("announceType").value;
-  let text = "";
-  if(type === "fight"){
-    const f = (STATE.fights||[]).find(x=>Number(x.id)===Number($("announceFight").value));
-    text = fightAnnouncementText(f);
-  } else if(type === "winner"){
-    const f = (STATE.fights||[]).find(x=>Number(x.id)===Number($("announceFight").value));
-    text = winnerAnnouncementText(f);
-  } else if(type === "tournament"){
-    const t = (STATE.tournaments||[]).find(x=>Number(x.id)===Number($("announceTournament").value));
-    text = tournamentAnnouncementText(t);
-  } else if(type === "belt"){
-    const b = (STATE.belts||[]).find(x=>Number(x.id)===Number($("announceBelt").value));
-    text = beltAnnouncementText(b);
-  } else {
-    text = recruitmentAnnouncementText();
-  }
-  $("announceOutput").value = text;
-}
-
-function announcements(){
-  return `
-    <div class="card hero">
-      <h3>📣 Announcement Generator</h3>
-      <p class="muted">Create copy/paste posts for Discord, faction chat, Torn forums, or wherever you are hyping the next fight.</p>
-      <span class="pill good">Fight cards</span>
-      <span class="pill good">Winner posts</span>
-      <span class="pill good">Belt posts</span>
-      <span class="pill good">Tournament posts</span>
-      <span class="pill good">Recruitment posts</span>
-    </div>
-
-    <div class="grid wide" style="margin-top:10px">
-      <div class="card">
-        <h3>Build Post</h3>
-        <select id="announceType" onchange="updateAnnouncement()">
-          <option value="fight">Upcoming fight post</option>
-          <option value="winner">Winner/result post</option>
-          <option value="tournament">Tournament/bracket post</option>
-          <option value="belt">Belt announcement</option>
-          <option value="recruit">Recruitment / welcome post</option>
-        </select>
-
-        <label class="muted">Fight</label>
-        <select id="announceFight" onchange="updateAnnouncement()">${fightOptions()}</select>
-
-        <label class="muted">Tournament</label>
-        <select id="announceTournament" onchange="updateAnnouncement()">${tournamentOptions()}</select>
-
-        <label class="muted">Belt</label>
-        <select id="announceBelt" onchange="updateAnnouncement()">${beltOptions()}</select>
-
-        <button class="gold" onclick="updateAnnouncement()">Generate</button>
-        <button class="green" onclick="copyAnnouncement()">Copy Post</button>
-      </div>
-
-      <div class="card">
-        <h3>Post Preview</h3>
-        <textarea id="announceOutput" style="min-height:360px"></textarea>
-      </div>
-    </div>
-
-    <script>setTimeout(updateAnnouncement,50);<\/script>
-  `;
-}
-
 
 function ideas(){
   return `<div class="card hero"><h3>Ideas</h3>${STATE.user?`<textarea id="idea" placeholder="Drop a cursed fight idea..."></textarea><button class="green" onclick="submitIdea()">Submit</button>`:`<div class="empty">Login to submit.</div>`}</div><div class="grid wide" style="margin-top:10px">${(STATE.ideas||[]).map(i=>`<div class="card"><div class="between"><b>${esc(i.name||"Someone")}</b>${isAdmin()?`<button class="red" onclick="deleteIdea(${i.id})">Remove</button>`:""}</div><p>${esc(i.idea)}</p><div class="row"><button class="green" onclick="voteIdea(${i.id},'yes')">Yes ${Number(i.yes_count||0)}</button><button class="red" onclick="voteIdea(${i.id},'no')">No ${Number(i.no_count||0)}</button></div></div>`).join("") || `<div class="empty">No ideas yet.</div>`}</div>`;
@@ -1115,6 +902,15 @@ function voteIdea(id,vote){
 function deleteIdea(id){
   if(!confirm("Remove this idea?")) return;
   action("/api/admin/ideas/"+id+"/delete",{},"Idea removed.");
+}
+
+
+function registerRef(){
+  action("/api/referees/register",{
+    event_id:$("refSignupEvent").value,
+    name:$("refSignupName").value,
+    notes:$("refSignupNotes").value
+  },"Ref signup saved.");
 }
 
 render();
