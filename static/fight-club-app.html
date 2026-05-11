@@ -705,7 +705,7 @@ function myPickRows(){
 
 function myfighter(){
   if(!STATE.user){
-    return `<div class="card hero"><h3>My Fighter Dashboard</h3><div class="empty">Login in Settings first.</div><button class="blue" onclick="setTab('settings')">Go to Settings</button></div>`;
+    return `<div class="card hero"><h3>My Fighter Dashboard</h3><div class="empty">Login in Settings first.</div><button class="blue" onclick="setTab('settings')">Go to Settings / Re-login</button></div>`;
   }
 
   const mine = myProfiles();
@@ -803,7 +803,7 @@ function matchmaking(){
   const s=STATE.matchmaking_settings||{range_amount:5000000};
   const mine=myQueueEntry();
   const myFighters=STATE.user?(STATE.fighters||[]).filter(f=>Number(f.torn_id)===Number(STATE.user.torn_id)):[];
-  return `<div class="card hero"><h3>🥊 Matchmaking Queue</h3><p class="muted">Enter queue and Fight Club will look for a waiting player within the stat range.</p><span class="pill good">Current range: ±${Number(s.range_amount||5000000).toLocaleString()} effective battle stats</span>${mine?`<span class="pill ${mine.status==="waiting"?"warn":"good"}">Your status: ${esc(mine.status)}</span>`:""}</div><div class="grid wide" style="margin-top:10px"><div class="card"><h3>Enter Queue</h3>${STATE.user?`<p class="muted">Exact effective battle stats stay private. Players only see similar-effective-stat match found.</p><select id="mmFighter">${myFighters.map(f=>`<option value="${f.id}">${esc(f.nickname||f.name)} [${f.id}]</option>`).join("")}<option value="">No fighter profile / use account</option></select><button class="green" onclick="enterMatchmaking()">Enter Queue</button><button class="red" onclick="leaveMatchmaking()">Leave Queue</button>`:`<div class="empty">Login first.</div><button class="blue" onclick="setTab('settings')">Go to Settings</button>`}</div><div class="card"><h3>Your Match Info</h3>${mine?`<span class="pill">Queue ID ${esc(mine.id)}</span><span class="pill">${esc(mine.status)}</span><div class="muted">Fair effective range: ${esc(fmtStatsRange(mine.total_stats,mine.range_amount))}</div>`:`<div class="empty">You are not in queue.</div>`}</div></div><div class="section-title">Matches</div><div class="grid wide">${matchmakingMatchesHtml()}</div>${isAdmin()?`<div class="section-title">Admin Matchmaking</div><div class="grid wide"><div class="card"><h3>Settings</h3><input id="mmRange" type="number" value="${esc(s.range_amount||5000000)}" placeholder="Range amount"><button class="gold" onclick="saveMatchmakingSettings()">Save Match Range</button></div><div class="card"><h3>Queue</h3>${matchmakingQueueHtml()}</div></div>`:""}`;
+  return `<div class="card hero"><h3>🥊 Matchmaking Queue</h3><p class="muted">Enter queue and Fight Club will look for a waiting player within the stat range.</p><span class="pill good">Current range: ±${Number(s.range_amount||5000000).toLocaleString()} effective battle stats</span>${mine?`<span class="pill ${mine.status==="waiting"?"warn":"good"}">Your status: ${esc(mine.status)}</span>`:""}</div><div class="grid wide" style="margin-top:10px"><div class="card"><h3>Enter Queue</h3>${STATE.user?`<p class="muted">Exact effective battle stats stay private. If queue says no stats found, go to Settings, log out, then log back in so the app can save your stats for matchmaking.</p><select id="mmFighter">${myFighters.map(f=>`<option value="${f.id}">${esc(f.nickname||f.name)} [${f.id}]</option>`).join("")}<option value="">No fighter profile / use account</option></select><button class="green" onclick="enterMatchmaking()">Enter Queue</button><button class="red" onclick="leaveMatchmaking()">Leave Queue</button>`:`<div class="empty">Login first.</div><button class="blue" onclick="setTab('settings')">Go to Settings / Re-login</button>`}</div><div class="card"><h3>Your Match Info</h3>${mine?`<span class="pill">Queue ID ${esc(mine.id)}</span><span class="pill">${esc(mine.status)}</span><div class="muted">Fair effective range: ${esc(fmtStatsRange(mine.total_stats,mine.range_amount))}</div>`:`<div class="empty">You are not in queue.</div>`}</div></div><div class="section-title">Matches</div><div class="grid wide">${matchmakingMatchesHtml()}</div>${isAdmin()?`<div class="section-title">Admin Matchmaking</div><div class="grid wide"><div class="card"><h3>Settings</h3><input id="mmRange" type="number" value="${esc(s.range_amount||5000000)}" placeholder="Range amount"><button class="gold" onclick="saveMatchmakingSettings()">Save Match Range</button></div><div class="card"><h3>Queue</h3>${matchmakingQueueHtml()}</div></div>`:""}`;
 }
 
 function challenges(){
@@ -1078,7 +1078,7 @@ function exchange(){
           <input id="exchangePointItemAmount" type="number" min="1" placeholder="How many ${esc((STATE.point_settings||{}).item_name||"Xanax")} sent?">
           <input id="exchangePointProof" placeholder="Optional proof/note, e.g. sent just now">
           <button class="green" onclick="requestPointsFromExchange()">Submit Point Request</button>
-        ` : `<div class="empty">Login first to buy points.</div><button class="blue" onclick="setTab('settings')">Go to Settings</button>`}
+        ` : `<div class="empty">Login first to buy points.</div><button class="blue" onclick="setTab('settings')">Go to Settings / Re-login</button>`}
       </div>
       ${rewardSlotsHtml()}
     </div>
@@ -1129,7 +1129,7 @@ function points(){
           <input id="pointItemAmount" type="number" min="1" placeholder="How many ${esc(s.item_name)} sent?">
           <input id="pointProof" placeholder="Optional proof/note, e.g. sent just now">
           <button class="green" onclick="requestPoints()">Submit Request</button>
-        ` : `<div class="empty">Login first to request points.</div><button class="blue" onclick="setTab('settings')">Go to Settings</button>`}
+        ` : `<div class="empty">Login first to request points.</div><button class="blue" onclick="setTab('settings')">Go to Settings / Re-login</button>`}
       </div>
 
       <div class="card">
