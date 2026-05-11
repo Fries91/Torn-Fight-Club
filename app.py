@@ -104,6 +104,7 @@ def init_db():
                 stats_range TEXT,
                 loadout TEXT,
                 rank_points INTEGER NOT NULL DEFAULT 0,
+                matchmaking_count INTEGER NOT NULL DEFAULT 0,
                 record_w INTEGER NOT NULL DEFAULT 0,
                 record_l INTEGER NOT NULL DEFAULT 0,
                 active INTEGER NOT NULL DEFAULT 1,
@@ -476,6 +477,8 @@ def init_db():
         add_column_if_missing(con, "users", "private_stats_json", "TEXT")
         add_column_if_missing(con, "users", "battle_stats_updated_at", "TEXT")
         add_column_if_missing(con, "users", "battle_stats_source", "TEXT")
+        add_column_if_missing(con, "fighters", "matchmaking_count", "INTEGER NOT NULL DEFAULT 0")
+
         add_column_if_missing(con, "managers", "can_fights", "INTEGER NOT NULL DEFAULT 0")
         add_column_if_missing(con, "managers", "can_points", "INTEGER NOT NULL DEFAULT 0")
         add_column_if_missing(con, "managers", "can_rewards", "INTEGER NOT NULL DEFAULT 0")
@@ -563,6 +566,12 @@ def require_login(fn):
             manager_permissions = manager_perms_for(con, token_user["torn_id"])
             if token_user.get("role") == "admin":
                 managers = [dict(x) for x in con.execute("SELECT * FROM managers ORDER BY is_active DESC, name ASC, torn_id ASC").fetchall()]
+        matchmaking_top5 = [dict(x) for x in con.execute("""
+            SELECT * FROM fighters
+            WHERE active=1
+            ORDER BY COALESCE(matchmaking_count,0) DESC, rank_points DESC, record_w DESC
+            LIMIT 5
+        """).fetchall()]
         return jsonify({"ok": False, "error": "Login required"}), 401
         request.user = u
         return fn(*args, **kwargs)
@@ -861,7 +870,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "5.0.0",
+        "version": "5.0.1",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -1124,6 +1133,7 @@ def state():
         "admins": sorted(list(ADMIN_IDS)),
         "events": events,
         "fighters": fighters,
+        "matchmaking_top5": matchmaking_top5,
         "fights": fights,
         "ideas": ideas,
         "leaderboard": leaderboard,
@@ -2658,6 +2668,7 @@ def create_fight_from_match(match_id):
         cur = con.execute("INSERT INTO fights(event_id, fighter_a_id, fighter_b_id, status, round_name, rule_set, odds_a, odds_b, starts_at, spectate_url, tournament_id, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (event_id, fa, fb, "scheduled", round_name, rule_set, 1.9, 1.9, starts_at, spectate_url, None, now_iso()))
         fight_id = cur.lastrowid
         con.execute("UPDATE matchmaking_matches SET status='fight_created', fight_id=?, resolved_by=?, resolved_at=? WHERE id=?", (fight_id, request.user["torn_id"], now_iso(), match_id))
+        con.execute("UPDATE fighters SET matchmaking_count=COALESCE(matchmaking_count,0)+1 WHERE id IN (?,?)", (fa, fb))
         create_user_notification(con, m["user_a_torn_id"], "🥊 Match fight created!", f"Your similar-stat match is now Fight #{fight_id}.", "matchmaking", fight_id=fight_id)
         create_user_notification(con, m["user_b_torn_id"], "🥊 Match fight created!", f"Your similar-stat match is now Fight #{fight_id}.", "matchmaking", fight_id=fight_id)
         audit(con, request.user["torn_id"], "create_fight_from_match", f"matchmaking:{match_id}", {"fight_id": fight_id})
