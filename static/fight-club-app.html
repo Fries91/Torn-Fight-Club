@@ -3,9 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
 <title>Torn Fight Club</title>
 <style>
-body{margin:0;background:#070707;color:#f4f4f4;font-family:Arial,Helvetica,sans-serif}
+body{margin:0!important;background:#070707!important;color:#f4f4f4!important;font-family:Arial,Helvetica,sans-serif!important;min-height:100vh!important}
 header{position:sticky;top:0;z-index:10;background:linear-gradient(90deg,#260000,#111);border-bottom:1px solid #8b0000;box-shadow:0 8px 24px #0008}
 .head{max-width:1180px;margin:auto;padding:12px;display:flex;justify-content:space-between;gap:10px;align-items:center}
 .logo{font-size:22px;font-weight:900;text-shadow:0 0 12px #d00}
@@ -60,6 +62,12 @@ textarea{min-height:90px}.green{background:#064b20;border-color:#20c060}.red{bac
 .bracket-round{border-left:4px solid #b40000;padding-left:8px;margin:10px 0}
 .bracket-fight{background:#0c0c0c;border:1px solid #333;border-radius:10px;padding:8px;margin:6px 0}
 @media(max-width:650px){.head{display:block}.status{text-align:left;margin-top:5px}.grid,.wide,.admin-grid{grid-template-columns:1fr}main{padding:8px 8px 68px}.tab{font-size:12px;padding:7px 8px}.tabs{max-height:86px;overflow:auto}.card{padding:10px}.section-title{margin-top:10px}}
+
+#pdaFallback{display:none;margin:12px;padding:14px;border:1px solid #8b0000;border-radius:16px;background:#141414;color:#fff}
+#pdaFallback h3{margin:0 0 8px;color:#ff6969}
+#pdaFallback button{margin-top:8px}
+main#app{display:block!important;min-height:220px!important}
+header{display:block!important}
 </style>
 </head>
 <body>
@@ -78,9 +86,52 @@ textarea{min-height:90px}.green{background:#064b20;border-color:#20c060}.red{bac
   </div>
 </main>
 
+<div id="pdaFallback">
+  <h3>🥊 Fight Club PDA Loading Issue</h3>
+  <p>PDA is blocking or failing the app JavaScript. The app is not down if it works in browser.</p>
+  <button onclick="location.reload()">Reload App</button>
+  <button onclick="location.href='https://torn-fight-club.onrender.com/app?fresh='+Date.now()">Open Fresh App</button>
+</div>
 <div id="toast"></div>
 <div class="bottom-quick"><button onclick="setTab('overview')">Home</button><button onclick="setTab('notifications')">🔔</button><button onclick="setTab('fightcard')">Fights</button><button onclick="setTab('myfighter')">Mine</button></div>
 <div class="modal" id="spectateModal"><div class="box"><h3>👀 Spectate / Proof Menu</h3><div id="spectateModalBody"></div><button onclick="closeSpectateMenu()">Close</button></div></div>
+
+
+<script id="pda-crash-guard">
+(function(){
+  function showPdaFallback(msg){
+    try{
+      var box=document.getElementById("pdaFallback");
+      var app=document.getElementById("app");
+      if(box){
+        box.style.display="block";
+        var p=document.createElement("p");
+        p.className="muted";
+        p.textContent=msg || "Unknown PDA loading error.";
+        box.appendChild(p);
+      }
+      if(app && (!app.textContent || app.textContent.indexOf("Loading Fight Club")>=0)){
+        app.innerHTML='<div class="card hero"><h3>🥊 PDA App Error</h3><p class="muted">'+String(msg||"The PDA webview failed to load the app script.")+'</p><button onclick="location.reload()">Reload</button><button onclick="location.href=\\'https://torn-fight-club.onrender.com/app?fresh=\\'+Date.now()">Open Fresh</button></div>';
+      }
+    }catch(e){}
+  }
+  window.addEventListener("error",function(e){
+    showPdaFallback(e && e.message ? e.message : "Script error");
+  });
+  window.addEventListener("unhandledrejection",function(e){
+    var r=e && e.reason;
+    showPdaFallback(r && r.message ? r.message : String(r||"Promise error"));
+  });
+  setTimeout(function(){
+    try{
+      var app=document.getElementById("app");
+      if(app && app.textContent && app.textContent.indexOf("Loading Fight Club")>=0){
+        showPdaFallback("Still loading after 8 seconds. PDA may have cached an old file or blocked the script.");
+      }
+    }catch(e){}
+  },8000);
+})();
+</script>
 
 <script>
 
@@ -113,7 +164,7 @@ let STATE = {
 const ADMINS = [3679030, 1905671];
 
 function $(id){return document.getElementById(id);}
-function esc(s){return String(s ?? "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function esc(s){return String(s == null ? "" : s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function toast(msg){const t=$("toast");t.textContent=msg;t.style.display="block";setTimeout(()=>t.style.display="none",3500);}
 function isAdmin(){return STATE.user && ADMINS.includes(Number(STATE.user.torn_id));}
 function userLine(){return STATE.user ? `${esc(STATE.user.name)} [${STATE.user.torn_id}] • ${esc(STATE.user.role)} • ${STATE.user.prediction_points} pts` : "Not logged in";}
