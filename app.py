@@ -897,7 +897,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "5.1.2",
+        "version": "5.1.3",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -1180,7 +1180,7 @@ def state():
         "event_brackets": event_brackets,
         "event_bracket_pairs": event_bracket_pairs,
         "fighters": fighters,
-        "matchmaking_top5": matchmaking_top5,
+        "matchmaking_top5": [],
         "fights": fights,
         "ideas": ideas,
         "leaderboard": leaderboard,
@@ -1204,9 +1204,9 @@ def state():
         "point_orders": point_orders,
         "reward_slots": reward_slots,
         "reward_requests": reward_requests,
-        "matchmaking_settings": matchmaking_settings,
-        "match_queue": match_queue,
-        "matchmaking_matches": matchmaking_matches,
+        "matchmaking_settings": {"range_amount":0, "disabled": True},
+        "match_queue": [],
+        "matchmaking_matches": [],
         "safety_note": "Prediction points only. Do not use this app to handle real Torn money, items, or off-platform gambling.",
     })
 
@@ -2611,118 +2611,31 @@ def resolve_reward_request(request_id):
 @app.post("/api/matchmaking/enter")
 @require_login
 def enter_matchmaking_queue():
-    data = request.get_json(force=True, silent=True) or {}
-    fighter_id = data.get("fighter_id")
-    fighter_id = int(fighter_id) if fighter_id else None
-    with db() as con:
-        settings = con.execute("SELECT * FROM matchmaking_settings WHERE id=1").fetchone()
-        range_amount = int(settings["range_amount"] if settings else 5000000)
-        user = con.execute("SELECT * FROM users WHERE torn_id=?", (request.user["torn_id"],)).fetchone()
-        total_stats = get_total_battle_stats_from_user(user or request.user)
-        if total_stats < 1:
-            return jsonify({"ok": False, "error": "No effective/total battle stats saved yet. Go to Settings, log out, then log back in with a Torn API key that can read your own battle stats."}), 400
-        if fighter_id:
-            f = con.execute("SELECT * FROM fighters WHERE id=? AND torn_id=? AND active=1", (fighter_id, request.user["torn_id"])).fetchone()
-            if not f:
-                return jsonify({"ok": False, "error": "That fighter profile is not yours"}), 403
-        con.execute("""
-            INSERT INTO match_queue(user_torn_id, user_name, fighter_id, total_stats, stats_type, range_amount, status, created_at)
-            VALUES(?,?,?,?,?,?,?,?)
-            ON CONFLICT(user_torn_id) DO UPDATE SET
-                user_name=excluded.user_name, fighter_id=excluded.fighter_id,
-                total_stats=excluded.total_stats, stats_type=excluded.stats_type, range_amount=excluded.range_amount,
-                status='waiting', created_at=excluded.created_at, matched_at=NULL
-        """, (request.user["torn_id"], request.user.get("name"), fighter_id, total_stats, "effective", range_amount, "waiting", now_iso()))
-        match_id = try_auto_match_queue(con, request.user["torn_id"])
-        audit(con, request.user["torn_id"], "enter_matchmaking_queue", "matchmaking:queue", {"range_amount": range_amount, "match_id": match_id})
-    return jsonify({"ok": True, "match_id": match_id})
+    return jsonify({"ok": False, "error": "Matchmaking is currently disabled"}), 400
 
 
 @app.post("/api/matchmaking/leave")
 @require_login
 def leave_matchmaking_queue():
-    with db() as con:
-        # Remove the active waiting/cancelled queue entry so the user's Match Info clears.
-        # Already-matched rows stay in match history/admin view.
-        con.execute("DELETE FROM match_queue WHERE user_torn_id=? AND status IN ('waiting','cancelled')", (request.user["torn_id"],))
-        audit(con, request.user["torn_id"], "leave_matchmaking_queue", "matchmaking:queue", {})
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "disabled": True})
 
 
 @app.post("/api/admin/matchmaking/settings")
 @require_admin_or_perm("matchmaking")
 def update_matchmaking_settings():
-    data = request.get_json(force=True, silent=True) or {}
-    range_amount = int(data.get("range_amount") or 5000000)
-    if range_amount < 1:
-        return jsonify({"ok": False, "error": "Range must be at least 1"}), 400
-    with db() as con:
-        con.execute("""
-            INSERT INTO matchmaking_settings(id, range_amount, updated_by, updated_at)
-            VALUES(1,?,?,?)
-            ON CONFLICT(id) DO UPDATE SET range_amount=excluded.range_amount, updated_by=excluded.updated_by, updated_at=excluded.updated_at
-        """, (range_amount, request.user["torn_id"], now_iso()))
-        audit(con, request.user["torn_id"], "update_matchmaking_settings", "matchmaking:settings", {"range_amount": range_amount})
-    return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "Matchmaking is currently disabled"}), 400
 
 
 @app.post("/api/admin/matchmaking/matches/<int:match_id>/status")
 @require_admin_or_perm("matchmaking")
 def update_match_status(match_id):
-    data = request.get_json(force=True, silent=True) or {}
-    status = (data.get("status") or "").strip().lower()
-    admin_note = (data.get("admin_note") or "").strip()[:500]
-    if status not in ("approved", "rejected"):
-        return jsonify({"ok": False, "error": "Status must be approved or rejected"}), 400
-    with db() as con:
-        m = con.execute("SELECT * FROM matchmaking_matches WHERE id=?", (match_id,)).fetchone()
-        if not m:
-            return jsonify({"ok": False, "error": "Match not found"}), 404
-        con.execute("UPDATE matchmaking_matches SET status=?, resolved_by=?, resolved_at=?, admin_note=? WHERE id=?", (status, request.user["torn_id"], now_iso(), admin_note, match_id))
-        title = "🥊 Match approved!" if status == "approved" else "Match rejected"
-        body = "Your similar-stat match was approved by admin." if status == "approved" else (admin_note or "Your similar-stat match was rejected by admin.")
-        create_user_notification(con, m["user_a_torn_id"], title, body, "matchmaking")
-        create_user_notification(con, m["user_b_torn_id"], title, body, "matchmaking")
-        audit(con, request.user["torn_id"], "update_match_status", f"matchmaking:{match_id}", {"status": status})
-    return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "Matchmaking is currently disabled"}), 400
 
 
 @app.post("/api/admin/matchmaking/matches/<int:match_id>/create-fight")
 @require_admin_or_perm("matchmaking")
 def create_fight_from_match(match_id):
-    data = request.get_json(force=True, silent=True) or {}
-    event_id = int(data.get("event_id") or 1)
-    round_name = (data.get("round_name") or "Matched Fight").strip()[:80]
-    rule_set = (data.get("rule_set") or "Similar stats matchmaking fight").strip()[:240]
-    starts_at = (data.get("starts_at") or "").strip()[:80]
-    spectate_url = (data.get("spectate_url") or "").strip()[:500]
-    with db() as con:
-        m = con.execute("SELECT * FROM matchmaking_matches WHERE id=?", (match_id,)).fetchone()
-        if not m:
-            return jsonify({"ok": False, "error": "Match not found"}), 404
-        if m["fight_id"]:
-            return jsonify({"ok": False, "error": "Fight already created for this match"}), 400
-        fa, fb = m["fighter_a_id"], m["fighter_b_id"]
-        if not fa:
-            row = con.execute("SELECT id FROM fighters WHERE torn_id=? AND active=1 ORDER BY id DESC LIMIT 1", (m["user_a_torn_id"],)).fetchone()
-            fa = row["id"] if row else None
-        if not fb:
-            row = con.execute("SELECT id FROM fighters WHERE torn_id=? AND active=1 ORDER BY id DESC LIMIT 1", (m["user_b_torn_id"],)).fetchone()
-            fb = row["id"] if row else None
-        if not fa:
-            cur = con.execute("INSERT INTO fighters(torn_id, name, nickname, stats_range, loadout, active, created_at) VALUES(?,?,?,?,?,?,?)", (m["user_a_torn_id"], m["user_a_name"], m["user_a_name"], "Private matched stats", "TBA", 1, now_iso()))
-            fa = cur.lastrowid
-        if not fb:
-            cur = con.execute("INSERT INTO fighters(torn_id, name, nickname, stats_range, loadout, active, created_at) VALUES(?,?,?,?,?,?,?)", (m["user_b_torn_id"], m["user_b_name"], m["user_b_name"], "Private matched stats", "TBA", 1, now_iso()))
-            fb = cur.lastrowid
-        cur = con.execute("INSERT INTO fights(event_id, fighter_a_id, fighter_b_id, status, round_name, rule_set, odds_a, odds_b, starts_at, spectate_url, tournament_id, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (event_id, fa, fb, "scheduled", round_name, rule_set, 1.9, 1.9, starts_at, spectate_url, None, now_iso()))
-        fight_id = cur.lastrowid
-        con.execute("UPDATE matchmaking_matches SET status='fight_created', fight_id=?, resolved_by=?, resolved_at=? WHERE id=?", (fight_id, request.user["torn_id"], now_iso(), match_id))
-        con.execute("UPDATE fighters SET matchmaking_count=COALESCE(matchmaking_count,0)+1 WHERE id IN (?,?)", (fa, fb))
-        create_user_notification(con, m["user_a_torn_id"], "🥊 Match fight created!", f"Your similar-stat match is now Fight #{fight_id}.", "matchmaking", fight_id=fight_id)
-        create_user_notification(con, m["user_b_torn_id"], "🥊 Match fight created!", f"Your similar-stat match is now Fight #{fight_id}.", "matchmaking", fight_id=fight_id)
-        audit(con, request.user["torn_id"], "create_fight_from_match", f"matchmaking:{match_id}", {"fight_id": fight_id})
-    return jsonify({"ok": True, "fight_id": fight_id})
+    return jsonify({"ok": False, "error": "Matchmaking is currently disabled"}), 400
 
 
 @app.post("/api/fights/<int:fight_id>/log")
