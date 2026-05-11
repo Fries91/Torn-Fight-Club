@@ -166,6 +166,15 @@ const ADMINS = [3679030, 1905671];
 function $(id){return document.getElementById(id);}
 function esc(s){return String(s == null ? "" : s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function toast(msg){const t=$("toast");t.textContent=msg;t.style.display="block";setTimeout(()=>t.style.display="none",3500);}
+
+function canManage(perm){
+  return isAdmin() || !!((STATE.manager_permissions||{})[perm]);
+}
+function canAnyManage(){
+  const p = STATE.manager_permissions || {};
+  return isAdmin() || Object.keys(p).some(k=>p[k]);
+}
+
 function isAdmin(){return STATE.user && ADMINS.includes(Number(STATE.user.torn_id));}
 function userLine(){return STATE.user ? `${esc(STATE.user.name)} [${STATE.user.torn_id}] • ${esc(STATE.user.role)} • ${STATE.user.prediction_points} pts` : "Not logged in";}
 function setTab(t){TAB=t;localStorage.setItem("tfc_tab",t);render();}
@@ -224,10 +233,13 @@ async function refresh(){
 
 function renderTabs(){
   let tabs = ["overview","notifications","fightcard","fightLogs","fighters","myfighter","matchmaking","challenges","points","exchange","picks","leaderboard","belts","ideas","rules","settings"];
-  if(isAdmin()){ tabs.push("announcements"); tabs.push("admin"); }
-  const adminOnlyTabs = ["admin","announcements"];
-  if(!isAdmin()) tabs = tabs.filter(t=>!adminOnlyTabs.includes(t));
-  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fightLogs:"Fight Logs",fighters:"Fighters",myfighter:"My Fighter",matchmaking:"Matchmaking",challenges:"Challenges",points:"Points",exchange:"Exchange",picks:"Picks",leaderboard:"Ranks",belts:"Belts",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin"};
+  if(isAdmin() || canManage("posts")) tabs.push("announcements");
+  if(isAdmin() || canAnyManage()) tabs.push("admin");
+  if(isAdmin()) tabs.push("management");
+  const adminOnlyTabs = ["admin"];
+  if(!isAdmin() && !canAnyManage()) tabs = tabs.filter(t=>!adminOnlyTabs.includes(t));
+  if(!isAdmin() && !canManage("posts")) tabs = tabs.filter(t=>t!=="announcements");
+  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fightLogs:"Fight Logs",fighters:"Fighters",myfighter:"My Fighter",matchmaking:"Matchmaking",challenges:"Challenges",points:"Points",exchange:"Exchange",picks:"Picks",leaderboard:"Ranks",belts:"Belts",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin",management:"Management"};
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
 
@@ -238,11 +250,12 @@ function applyAdminOnlyUi(){
 }
 
 function render(){
-  if(!isAdmin() && ["admin","announcements"].includes(TAB)) TAB="overview";
+  if(TAB==="admin" && !isAdmin() && !canAnyManage()) TAB="overview";
+  if(TAB==="announcements" && !isAdmin() && !canManage("posts")) TAB="overview";
   maybeBrowserNotify();
   $("userStatus").innerHTML = userLine();
   renderTabs();
-  const pages = {overview, notifications, fightcard, fightLogs, fighters, myfighter, matchmaking, challenges, points, exchange, picks, leaderboard, belts, ideas, rules, settings, admin};
+  const pages = {overview, notifications, fightcard, fightLogs, fighters, myfighter, matchmaking, challenges, points, exchange, picks, leaderboard, belts, ideas, rules, settings, admin, management};
   if(typeof announcements === "function") pages.announcements = announcements;
   $("app").innerHTML = (pages[TAB] || overview)();
   applyAdminOnlyUi();
@@ -1237,8 +1250,74 @@ function settings(){
   `;
 }
 
+
+function managerPermCheckbox(tornId, perm, label, checked){
+  const id = `mgr-${tornId || "new"}-${perm}`;
+  return `<label class="mini"><input id="${id}" data-perm="${perm}" type="checkbox" ${checked ? "checked" : ""} style="width:auto;margin-right:6px">${label}</label>`;
+}
+function management(){
+  if(!isAdmin()) return `<div class="card hero"><h3>Management Locked</h3><p class="muted">Full admin only.</p></div>`;
+  const perms = [
+    ["fights","Fight/event controls"],
+    ["points","Point approval/settings"],
+    ["rewards","Reward slot/request controls"],
+    ["matchmaking","Matchmaking approval/create fights"],
+    ["logs","Fight log review"],
+    ["ranks","Reset ranks"],
+    ["posts","Posts/announcement generator"],
+    ["belts","Belt controls"],
+    ["ideas","Remove ideas"]
+  ];
+  const managers = STATE.managers || [];
+  return `<div class="card hero">
+    <h3>🛡️ Management</h3>
+    <p class="muted">Name managers and give only the admin privileges they need. Full admins still control everything.</p>
+  </div>
+
+  <div class="grid wide" style="margin-top:10px">
+    <div class="card">
+      <h3>Add / Update Manager</h3>
+      <input id="mgrNewId" type="number" placeholder="Manager Torn ID">
+      <input id="mgrNewName" placeholder="Manager name">
+      <div class="grid two">
+        ${perms.map(p=>managerPermCheckbox("new",p[0],p[1],false)).join("")}
+      </div>
+      <label class="mini"><input id="mgrNewActive" type="checkbox" checked style="width:auto;margin-right:6px">Active</label>
+      <button class="green" onclick="saveManager('new')">Save Manager</button>
+    </div>
+
+    <div class="card">
+      <h3>Permission Guide</h3>
+      <div class="mini"><b>Fights:</b> create/edit fights/events and side wagers.</div>
+      <div class="mini"><b>Points:</b> approve point purchases and set point rate.</div>
+      <div class="mini"><b>Rewards:</b> set exchange rewards and complete/reject reward requests.</div>
+      <div class="mini"><b>Matchmaking:</b> approve/reject matches and create fights from matches.</div>
+      <div class="mini"><b>Logs:</b> approve/reject fight logs and mark fights done.</div>
+      <div class="mini"><b>Ranks:</b> reset current ranks into all-time records.</div>
+      <div class="mini"><b>Posts:</b> use admin-only announcement generator.</div>
+      <div class="mini"><b>Belts:</b> manage belts.</div>
+      <div class="mini"><b>Ideas:</b> remove ideas.</div>
+    </div>
+  </div>
+
+  <div class="section-title">Current Managers</div>
+  <div class="grid wide">
+    ${managers.map(m=>`<div class="card">
+      <h3>${esc(m.name||"Manager")} [${esc(m.torn_id)}]</h3>
+      <span class="pill ${Number(m.is_active||0)===1?"good":"live"}">${Number(m.is_active||0)===1?"Active":"Inactive"}</span>
+      <input id="mgrName-${m.torn_id}" value="${esc(m.name||"")}" placeholder="Manager name">
+      <div class="grid two">
+        ${perms.map(p=>managerPermCheckbox(m.torn_id,p[0],p[1],Number(m["can_"+p[0]]||0)===1)).join("")}
+      </div>
+      <label class="mini"><input id="mgrActive-${m.torn_id}" type="checkbox" ${Number(m.is_active||0)===1?"checked":""} style="width:auto;margin-right:6px">Active</label>
+      <button class="green" onclick="saveManager(${m.torn_id})">Save</button>
+      <button class="red" onclick="deleteManager(${m.torn_id})">Delete</button>
+    </div>`).join("") || `<div class="empty">No managers yet.</div>`}
+  </div>`;
+}
+
 function admin(){
-  if(!isAdmin()) return `<div class="card hero"><h3>Admin Locked</h3><p class="muted">Admin only.</p></div>`;
+  if(!isAdmin() && !canAnyManage()) return `<div class="card hero"><h3>Management Locked</h3><p class="muted">Admin/manager only.</p></div>`;
 return `
     <div class="card hero">
       <h3>Admin Control Center</h3>
@@ -1669,6 +1748,31 @@ function resetCurrentRanks(){
     reset_records:$("rankResetRecords") ? $("rankResetRecords").checked : false,
     confirm:$("rankResetConfirm").value
   },"Current ranks reset and all-time record saved.");
+}
+
+
+function collectManagerPerms(key){
+  const out = {};
+  document.querySelectorAll(`[id^="mgr-${key}-"][data-perm]`).forEach(el=>{
+    out[el.dataset.perm] = !!el.checked;
+  });
+  return out;
+}
+function saveManager(key){
+  const isNew = String(key)==="new";
+  const tornId = isNew ? $("mgrNewId").value : key;
+  const name = isNew ? $("mgrNewName").value : $("mgrName-"+key).value;
+  const active = isNew ? $("mgrNewActive").checked : $("mgrActive-"+key).checked;
+  action("/api/admin/managers",{
+    torn_id:tornId,
+    name,
+    permissions:collectManagerPerms(key),
+    is_active:active
+  },"Manager saved.");
+}
+function deleteManager(tornId){
+  if(!confirm("Delete this manager?")) return;
+  action("/api/admin/managers/"+tornId+"/delete",{},"Manager deleted.");
 }
 
 render();
