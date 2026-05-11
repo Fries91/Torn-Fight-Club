@@ -376,6 +376,26 @@ def init_db():
 
 
 
+
+            CREATE TABLE IF NOT EXISTS managers (
+                torn_id INTEGER PRIMARY KEY,
+                name TEXT,
+                can_fights INTEGER NOT NULL DEFAULT 0,
+                can_points INTEGER NOT NULL DEFAULT 0,
+                can_rewards INTEGER NOT NULL DEFAULT 0,
+                can_matchmaking INTEGER NOT NULL DEFAULT 0,
+                can_logs INTEGER NOT NULL DEFAULT 0,
+                can_ranks INTEGER NOT NULL DEFAULT 0,
+                can_posts INTEGER NOT NULL DEFAULT 0,
+                can_belts INTEGER NOT NULL DEFAULT 0,
+                can_ideas INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_by INTEGER,
+                created_at TEXT NOT NULL,
+                updated_by INTEGER,
+                updated_at TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS all_time_rank_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 fighter_id INTEGER,
@@ -456,6 +476,19 @@ def init_db():
         add_column_if_missing(con, "users", "private_stats_json", "TEXT")
         add_column_if_missing(con, "users", "battle_stats_updated_at", "TEXT")
         add_column_if_missing(con, "users", "battle_stats_source", "TEXT")
+        add_column_if_missing(con, "managers", "can_fights", "INTEGER NOT NULL DEFAULT 0")
+        add_column_if_missing(con, "managers", "can_points", "INTEGER NOT NULL DEFAULT 0")
+        add_column_if_missing(con, "managers", "can_rewards", "INTEGER NOT NULL DEFAULT 0")
+        add_column_if_missing(con, "managers", "can_matchmaking", "INTEGER NOT NULL DEFAULT 0")
+        add_column_if_missing(con, "managers", "can_logs", "INTEGER NOT NULL DEFAULT 0")
+        add_column_if_missing(con, "managers", "can_ranks", "INTEGER NOT NULL DEFAULT 0")
+        add_column_if_missing(con, "managers", "can_posts", "INTEGER NOT NULL DEFAULT 0")
+        add_column_if_missing(con, "managers", "can_belts", "INTEGER NOT NULL DEFAULT 0")
+        add_column_if_missing(con, "managers", "can_ideas", "INTEGER NOT NULL DEFAULT 0")
+        add_column_if_missing(con, "managers", "is_active", "INTEGER NOT NULL DEFAULT 1")
+        add_column_if_missing(con, "managers", "updated_by", "INTEGER")
+        add_column_if_missing(con, "managers", "updated_at", "TEXT")
+
 
 
         con.execute("UPDATE users SET role='member' WHERE torn_id NOT IN (?, ?)", tuple(ADMIN_IDS))
@@ -524,7 +557,13 @@ def require_login(fn):
     def wrapper(*args, **kwargs):
         u = current_user()
         if not u:
-            return jsonify({"ok": False, "error": "Login required"}), 401
+            manager_permissions = {}
+        managers = []
+        if token_user:
+            manager_permissions = manager_perms_for(con, token_user["torn_id"])
+            if token_user.get("role") == "admin":
+                managers = [dict(x) for x in con.execute("SELECT * FROM managers ORDER BY is_active DESC, name ASC, torn_id ASC").fetchall()]
+        return jsonify({"ok": False, "error": "Login required"}), 401
         request.user = u
         return fn(*args, **kwargs)
     return wrapper
@@ -776,12 +815,53 @@ def notify_admins(con, title, body="", notification_type="admin", fight_id=None)
         if tid not in seen:
             create_user_notification(con, tid, title, body, notification_type, fight_id=fight_id)
 
+
+MANAGER_PERM_FIELDS = {
+    "fights": "can_fights",
+    "points": "can_points",
+    "rewards": "can_rewards",
+    "matchmaking": "can_matchmaking",
+    "logs": "can_logs",
+    "ranks": "can_ranks",
+    "posts": "can_posts",
+    "belts": "can_belts",
+    "ideas": "can_ideas",
+}
+
+def manager_perms_for(con, torn_id):
+    row = con.execute("SELECT * FROM managers WHERE torn_id=? AND is_active=1", (int(torn_id),)).fetchone()
+    if not row:
+        return {}
+    return {perm: bool(row[field]) for perm, field in MANAGER_PERM_FIELDS.items()}
+
+def user_has_manager_perm(con, torn_id, perm):
+    row = con.execute("SELECT role FROM users WHERE torn_id=?", (int(torn_id),)).fetchone()
+    if row and row["role"] == "admin":
+        return True
+    field = MANAGER_PERM_FIELDS.get(perm)
+    if not field:
+        return False
+    mgr = con.execute(f"SELECT {field} FROM managers WHERE torn_id=? AND is_active=1", (int(torn_id),)).fetchone()
+    return bool(mgr and mgr[field])
+
+def require_admin_or_perm(perm):
+    def deco(fn):
+        @wraps(fn)
+        @require_login
+        def wrapper(*args, **kwargs):
+            with db() as con:
+                if user_has_manager_perm(con, request.user["torn_id"], perm):
+                    return fn(*args, **kwargs)
+            return jsonify({"ok": False, "error": "Admin/manager permission required"}), 403
+        return wrapper
+    return deco
+
 @app.get("/")
 def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.9.7",
+        "version": "5.0.0",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -1137,7 +1217,7 @@ def predict():
 
 
 @app.post("/api/admin/events")
-@require_admin
+@require_admin_or_perm("fights")
 def admin_event():
     data = request.get_json(force=True, silent=True) or {}
     title = (data.get("title") or "Fight Night").strip()[:100]
@@ -1184,7 +1264,7 @@ def admin_update_event(event_id):
 
 
 @app.post("/api/admin/fights")
-@require_admin
+@require_admin_or_perm("fights")
 def admin_fight():
     data = request.get_json(force=True, silent=True) or {}
     event_id = int(data.get("event_id") or 1)
@@ -1216,7 +1296,7 @@ def admin_fight():
 
 
 @app.post("/api/admin/fights/<int:fight_id>/update")
-@require_admin
+@require_admin_or_perm("fights")
 def admin_update_fight(fight_id):
     data = request.get_json(force=True, silent=True) or {}
     allowed = {
@@ -1268,7 +1348,7 @@ def admin_fight_status(fight_id):
 
 
 @app.post("/api/admin/fights/<int:fight_id>/delete")
-@require_admin
+@require_admin_or_perm("fights")
 def admin_delete_fight(fight_id):
     with db() as con:
         con.execute("DELETE FROM predictions WHERE fight_id=?", (fight_id,))
@@ -1377,7 +1457,7 @@ def add_tournament_entry(tournament_id):
 
 
 @app.post("/api/admin/belts")
-@require_admin
+@require_admin_or_perm("belts")
 def create_belt():
     data = request.get_json(force=True, silent=True) or {}
     name = (data.get("name") or "Fight Club Belt").strip()[:100]
@@ -1704,7 +1784,7 @@ def admin_delete_referee(referee_id):
 
 
 @app.post("/api/admin/belts/<int:belt_id>/update")
-@require_admin
+@require_admin_or_perm("belts")
 def admin_update_belt(belt_id):
     data = request.get_json(force=True, silent=True) or {}
     fields, vals = [], []
@@ -2023,7 +2103,7 @@ def vote_idea(idea_id):
 
 
 @app.post("/api/admin/ideas/<int:idea_id>/delete")
-@require_admin
+@require_admin_or_perm("ideas")
 def delete_idea(idea_id):
     with db() as con:
         con.execute("DELETE FROM idea_votes WHERE idea_id=?", (idea_id,))
@@ -2068,7 +2148,7 @@ def register_referee():
 
 
 @app.post("/api/admin/props")
-@require_admin
+@require_admin_or_perm("fights")
 def create_fight_prop():
     data = request.get_json(force=True, silent=True) or {}
     fight_id = int(data.get("fight_id") or 0)
@@ -2146,7 +2226,7 @@ def place_prop_wager(prop_id):
 
 
 @app.post("/api/admin/props/<int:prop_id>/resolve")
-@require_admin
+@require_admin_or_perm("fights")
 def resolve_prop(prop_id):
     data = request.get_json(force=True, silent=True) or {}
     winning_option = (data.get("winning_option") or "").strip()
@@ -2189,7 +2269,7 @@ def resolve_prop(prop_id):
 
 
 @app.post("/api/admin/props/<int:prop_id>/delete")
-@require_admin
+@require_admin_or_perm("fights")
 def delete_prop(prop_id):
     with db() as con:
         prop = con.execute("SELECT * FROM fight_props WHERE id=?", (prop_id,)).fetchone()
@@ -2208,7 +2288,7 @@ def delete_prop(prop_id):
 
 
 @app.post("/api/admin/points/settings")
-@require_admin
+@require_admin_or_perm("points")
 def update_point_settings():
     data = request.get_json(force=True, silent=True) or {}
     item_name = (data.get("item_name") or "Xanax").strip()[:80]
@@ -2273,7 +2353,7 @@ def request_points():
 
 
 @app.post("/api/admin/points/orders/<int:order_id>/resolve")
-@require_admin
+@require_admin_or_perm("points")
 def resolve_point_order(order_id):
     data = request.get_json(force=True, silent=True) or {}
     status = (data.get("status") or "").strip().lower()
@@ -2333,7 +2413,7 @@ def reset_all_points():
 
 
 @app.post("/api/admin/rewards/slots")
-@require_admin
+@require_admin_or_perm("rewards")
 def update_reward_slots():
     data = request.get_json(force=True, silent=True) or {}
     slots = data.get("slots") or []
@@ -2424,7 +2504,7 @@ def request_reward():
 
 
 @app.post("/api/admin/rewards/requests/<int:request_id>/resolve")
-@require_admin
+@require_admin_or_perm("rewards")
 def resolve_reward_request(request_id):
     data = request.get_json(force=True, silent=True) or {}
     status = (data.get("status") or "").strip().lower()
@@ -2510,7 +2590,7 @@ def leave_matchmaking_queue():
 
 
 @app.post("/api/admin/matchmaking/settings")
-@require_admin
+@require_admin_or_perm("matchmaking")
 def update_matchmaking_settings():
     data = request.get_json(force=True, silent=True) or {}
     range_amount = int(data.get("range_amount") or 5000000)
@@ -2527,7 +2607,7 @@ def update_matchmaking_settings():
 
 
 @app.post("/api/admin/matchmaking/matches/<int:match_id>/status")
-@require_admin
+@require_admin_or_perm("matchmaking")
 def update_match_status(match_id):
     data = request.get_json(force=True, silent=True) or {}
     status = (data.get("status") or "").strip().lower()
@@ -2548,7 +2628,7 @@ def update_match_status(match_id):
 
 
 @app.post("/api/admin/matchmaking/matches/<int:match_id>/create-fight")
-@require_admin
+@require_admin_or_perm("matchmaking")
 def create_fight_from_match(match_id):
     data = request.get_json(force=True, silent=True) or {}
     event_id = int(data.get("event_id") or 1)
@@ -2658,7 +2738,7 @@ def submit_fight_log(fight_id):
 
 
 @app.post("/api/admin/fight-logs/<int:log_id>/review")
-@require_admin
+@require_admin_or_perm("logs")
 def review_fight_log(log_id):
     data = request.get_json(force=True, silent=True) or {}
     status = (data.get("status") or "").strip().lower()
@@ -2714,7 +2794,7 @@ def clear_read_notifications():
 
 
 @app.post("/api/admin/ranks/reset")
-@require_admin
+@require_admin_or_perm("ranks")
 def reset_current_ranks():
     data = request.get_json(force=True, silent=True) or {}
     confirm = (data.get("confirm") or "").strip()
@@ -2765,6 +2845,81 @@ def reset_current_ranks():
         })
 
     return jsonify({"ok": True, "fighters_archived": len(fighters)})
+
+
+@app.post("/api/admin/managers")
+@require_admin
+def save_manager():
+    data = request.get_json(force=True, silent=True) or {}
+    torn_id = int(data.get("torn_id") or 0)
+    name = (data.get("name") or "").strip()[:100]
+    perms = data.get("permissions") or {}
+    is_active = 1 if data.get("is_active", True) in (True, 1, "1", "true", "on", "yes") else 0
+
+    if not torn_id:
+        return jsonify({"ok": False, "error": "Manager Torn ID required"}), 400
+    if torn_id == int(request.user["torn_id"]):
+        return jsonify({"ok": False, "error": "You do not need to add yourself as manager; you are admin"}), 400
+
+    values = {}
+    for perm, field in MANAGER_PERM_FIELDS.items():
+        values[field] = 1 if perms.get(perm) in (True, 1, "1", "true", "on", "yes") else 0
+
+    with db() as con:
+        existing_user = con.execute("SELECT name FROM users WHERE torn_id=?", (torn_id,)).fetchone()
+        if not name and existing_user:
+            name = existing_user["name"]
+        if not name:
+            name = f"Manager {torn_id}"
+
+        con.execute("""
+            INSERT INTO managers(
+                torn_id, name, can_fights, can_points, can_rewards, can_matchmaking,
+                can_logs, can_ranks, can_posts, can_belts, can_ideas,
+                is_active, created_by, created_at, updated_by, updated_at
+            )
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(torn_id) DO UPDATE SET
+                name=excluded.name,
+                can_fights=excluded.can_fights,
+                can_points=excluded.can_points,
+                can_rewards=excluded.can_rewards,
+                can_matchmaking=excluded.can_matchmaking,
+                can_logs=excluded.can_logs,
+                can_ranks=excluded.can_ranks,
+                can_posts=excluded.can_posts,
+                can_belts=excluded.can_belts,
+                can_ideas=excluded.can_ideas,
+                is_active=excluded.is_active,
+                updated_by=excluded.updated_by,
+                updated_at=excluded.updated_at
+        """, (
+            torn_id, name,
+            values["can_fights"], values["can_points"], values["can_rewards"], values["can_matchmaking"],
+            values["can_logs"], values["can_ranks"], values["can_posts"], values["can_belts"], values["can_ideas"],
+            is_active, request.user["torn_id"], now_iso(), request.user["torn_id"], now_iso()
+        ))
+
+        create_user_notification(
+            con,
+            torn_id,
+            "Fight Club manager access updated",
+            "Your manager permissions were updated by admin.",
+            "manager"
+        )
+        audit(con, request.user["torn_id"], "save_manager", f"manager:{torn_id}", {"permissions": perms, "is_active": is_active})
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/managers/<int:torn_id>/delete")
+@require_admin
+def delete_manager(torn_id):
+    with db() as con:
+        con.execute("DELETE FROM managers WHERE torn_id=?", (torn_id,))
+        create_user_notification(con, torn_id, "Fight Club manager access removed", "Your manager access was removed by admin.", "manager")
+        audit(con, request.user["torn_id"], "delete_manager", f"manager:{torn_id}", {})
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
