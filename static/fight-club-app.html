@@ -403,7 +403,7 @@ function nextFightHeroHtml(){
   </div>`;
 }
 function fighterCardArt(f){
-  if(!f) return `<div class="empty">Register / update your fighter to generate your card.</div>`;
+  if(!f) return `<div class="empty">Register your fighter to generate your card.</div>`;
   const points = Number(f.rank_points||0), wins = Number(f.record_w||0), losses = Number(f.record_l||0);
   const icons = ["🥊","🔥","💀","🛏️","⚔️","🤡","👑","🧨"];
   const icon = icons[Math.abs(Number(f.id||0)) % icons.length];
@@ -494,7 +494,7 @@ function eventsTab(){
 
 function overview(){
   return `<div class="grid wide">
-    <div class="card hero"><h3>🥊 Fight Night Controls</h3><p class="muted">Torn Fight Club is now running as a real app page. The Torn userscript is only the launcher.</p><button class="gold" onclick="setTab('fightcard')">Fight Card</button><button class="green" onclick="setTab('eventsTab')">Events</button><button class="green" onclick="setTab('matchmaking')">Matchmaking</button><button class="blue" onclick="setTab('fighters')">Register / Update Fighter</button><button class="blue" onclick="setTab('points')">Get Points</button></div>
+    <div class="card hero"><h3>🥊 Fight Night Controls</h3><p class="muted">Torn Fight Club is now running as a real app page. The Torn userscript is only the launcher.</p><button class="gold" onclick="setTab('fightcard')">Fight Card</button><button class="green" onclick="setTab('eventsTab')">Events</button><button class="green" onclick="setTab('matchmaking')">Matchmaking</button><button class="blue" onclick="setTab('fighters')">Register Fighter</button><button class="blue" onclick="setTab('points')">Get Points</button></div>
     ${nextFightHeroHtml()}
     <div class="card"><h3>Notifications</h3>${typeof notificationPill==="function"?notificationPill():""}${typeof notificationList==="function"?notificationList(3):`<div class="empty">No notifications.</div>`}</div>
     <div class="card"><h3>Quick Status</h3><div class="mini">Fighters: ${(STATE.fighters||[]).length}</div><div class="mini">Fights: ${(STATE.fights||[]).length}</div><div class="mini">Open challenges: ${(STATE.challenges||[]).filter(c=>!['fight_created','converted'].includes(String(c.status||''))).filter(c=>String(c.status||"")==="pending").length}</div><div class="mini">Your points: ${STATE.user ? esc(STATE.user.prediction_points||0) : "Login needed"}</div></div>
@@ -666,7 +666,7 @@ function fighters(){
   return `
     <div class="grid wide">
       <div class="card hero"><h3>Fighters</h3><span class="pill">Total ${(STATE.fighters||[]).length}</span></div>
-      <div class="card"><h3>Register</h3>${STATE.user ? `<select id="regEvent">${eventOptions()}</select><input id="nick" placeholder="Nickname"><input id="range" placeholder="Stats class"><button class="green" onclick="registerFighter()">Register</button>` : `<div class="empty">Login first.</div>`}</div>
+      <div class="card"><h3>Register</h3>${STATE.user ? `<input id="nick" placeholder="Nickname"><button class="green" onclick="registerFighter()">Register</button>` : `<div class="empty">Login first.</div>`}</div>
       <div class="card private"><h3></h3>${privateStats()}</div>
     </div>
     <div class="grid wide" style="margin-top:10px">
@@ -804,8 +804,8 @@ function myfighter(){
   return `<div class="grid wide">
     <div class="card hero">
       <h3>My Fighter</h3>
-      <p class="muted">Each user can have one fighter profile. Update stats here to refresh your private matchmaking stats from Torn.</p>
-      ${STATE.user ? `<button class="blue" onclick="setTab('fighters')">Register / Update Fighter</button>` : `<button class="blue" onclick="setTab('settings')">Login</button>`}
+      <p class="muted">Each user can have one fighter profile. Once registered, you cannot create a second fighter. Update stats here to refresh your private matchmaking stats from Torn.</p>
+      ${STATE.user ? `<button class="blue" onclick="setTab('fighters')">Register Fighter</button>` : `<button class="blue" onclick="setTab('settings')">Login</button>`}
     </div>
     <div class="card">
       <h3>My Fighter Profile</h3>
@@ -818,7 +818,7 @@ function myfighter(){
     </div>
     <div class="card">
       <h3>Generated Fighter Card</h3>
-      ${typeof fighterCardArt==="function" ? fighterCardArt(f) : (f ? `<div class="mini">${esc(f.nickname||f.name)}</div>` : `<div class="empty">Register / update your fighter to generate your card.</div>`)}
+      ${typeof fighterCardArt==="function" ? fighterCardArt(f) : (f ? `<div class="mini">${esc(f.nickname||f.name)}</div>` : `<div class="empty">Register your fighter to generate your card.</div>`)}
     </div>
   </div>`;
 }
