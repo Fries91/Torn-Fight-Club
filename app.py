@@ -560,23 +560,10 @@ def require_login(fn):
     def wrapper(*args, **kwargs):
         u = current_user()
         if not u:
-            manager_permissions = {}
-        managers = []
-        if token_user:
-            manager_permissions = manager_perms_for(con, token_user["torn_id"])
-            if token_user.get("role") == "admin":
-                managers = [dict(x) for x in con.execute("SELECT * FROM managers ORDER BY is_active DESC, name ASC, torn_id ASC").fetchall()]
-        matchmaking_top5 = [dict(x) for x in con.execute("""
-            SELECT * FROM fighters
-            WHERE active=1
-            ORDER BY COALESCE(matchmaking_count,0) DESC, rank_points DESC, record_w DESC
-            LIMIT 5
-        """).fetchall()]
-        return jsonify({"ok": False, "error": "Login required"}), 401
+            return jsonify({"ok": False, "error": "Login required"}), 401
         request.user = u
         return fn(*args, **kwargs)
     return wrapper
-
 
 def require_admin(fn):
     @wraps(fn)
@@ -870,7 +857,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "5.0.1",
+        "version": "5.0.2",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -1127,6 +1114,12 @@ def state():
     for a in audit_rows:
         a["details"] = safe_json(a.pop("details_json", "{}"), {})
 
+    matchmaking_top5 = [dict(x) for x in con.execute("""
+        SELECT * FROM fighters
+        WHERE active=1
+        ORDER BY COALESCE(matchmaking_count,0) DESC, rank_points DESC, record_w DESC
+        LIMIT 5
+    """).fetchall()]
     return jsonify({
         "ok": True,
         "user": public_user(token_user),
@@ -2931,6 +2924,26 @@ def delete_manager(torn_id):
         create_user_notification(con, torn_id, "Fight Club manager access removed", "Your manager access was removed by admin.", "manager")
         audit(con, request.user["torn_id"], "delete_manager", f"manager:{torn_id}", {})
     return jsonify({"ok": True})
+
+
+@app.errorhandler(Exception)
+def json_error_handler(e):
+    import traceback
+    traceback.print_exc()
+    return jsonify({"ok": False, "error": "server_error", "message": str(e)}), 500
+
+
+@app.get("/api/health-db")
+def health_db():
+    checks = {}
+    with db() as con:
+        for table in ["users","fighters","fights","challenges","reward_slots","reward_requests","match_queue","matchmaking_matches","managers","all_time_rank_records"]:
+            try:
+                row = con.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()
+                checks[table] = int(row["c"])
+            except Exception as e:
+                checks[table] = "ERR: " + str(e)
+    return jsonify({"ok": True, "checks": checks})
 
 
 if __name__ == "__main__":
