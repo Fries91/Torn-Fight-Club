@@ -781,7 +781,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.9.6",
+        "version": "4.9.7",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -2502,7 +2502,9 @@ def enter_matchmaking_queue():
 @require_login
 def leave_matchmaking_queue():
     with db() as con:
-        con.execute("UPDATE match_queue SET status='cancelled' WHERE user_torn_id=? AND status='waiting'", (request.user["torn_id"],))
+        # Remove the active waiting/cancelled queue entry so the user's Match Info clears.
+        # Already-matched rows stay in match history/admin view.
+        con.execute("DELETE FROM match_queue WHERE user_torn_id=? AND status IN ('waiting','cancelled')", (request.user["torn_id"],))
         audit(con, request.user["torn_id"], "leave_matchmaking_queue", "matchmaking:queue", {})
     return jsonify({"ok": True})
 
