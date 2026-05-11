@@ -68,6 +68,13 @@ textarea{min-height:90px}.green{background:#064b20;border-color:#20c060}.red{bac
 #pdaFallback button{margin-top:8px}
 main#app{display:block!important;min-height:220px!important}
 header{display:block!important}
+
+.fighter-card-art{background:radial-gradient(circle at 30% 20%,#3b0000,#111 55%,#030303);border:1px solid #7f1d1d;border-radius:18px;padding:14px;box-shadow:0 12px 30px #000a;overflow:hidden}
+.fighter-card-art .avatar{font-size:54px;text-align:center;filter:drop-shadow(0 0 14px #ff2b2b)}
+.fighter-card-art .name{font-size:24px;font-weight:1000;text-align:center;color:#fff;text-shadow:0 0 12px #ff000088}
+.fighter-card-art .tag{text-align:center;color:#ffb3b3;font-weight:900;margin:6px 0 10px}
+.fighter-card-art .statline{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.fighter-card-art .statline div{background:#090909;border:1px solid #333;border-radius:10px;padding:7px;text-align:center}
 </style>
 </head>
 <body>
@@ -157,7 +164,7 @@ const BASE = "https://torn-fight-club.onrender.com";
 let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
-  ok: true, user: null, events: [], fighters: [], fights: [], ideas: [], leaderboard: [], all_time_rank_records: [],
+  ok: true, user: null, events: [], fighters: [], matchmaking_top5: [], fights: [], ideas: [], leaderboard: [], all_time_rank_records: [],
   my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_logs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], fight_logs: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
 };
 
@@ -212,7 +219,7 @@ async function api(path, method="GET", body=null){
 function normalizeState(data){
   data = data || {};
   const defaults = {
-    ok:true, user:null, events:[], fighters:[], fights:[], ideas:[], leaderboard:[], all_time_rank_records:[], all_time_rank_records:[],
+    ok:true, user:null, events:[], fighters:[], matchmaking_top5:[], fights:[], ideas:[], leaderboard:[], all_time_rank_records:[], all_time_rank_records:[],
     my_predictions:[], my_notifications:[], tournaments:[], tournament_entries:[],
     belts:[], teams:[], referees:[], audit:[], ref_checklists:[], fight_proofs:[], fight_logs:[],
     challenges:[], alerts:[], fight_logs:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[]
@@ -380,44 +387,43 @@ function fightCard(f, pick=false){
   `;
 }
 
-function overview(){
-  const top = [...(STATE.fighters||[])].sort((a,b)=>(b.rank_points||0)-(a.rank_points||0))[0];
-  const next = fights("live")[0] || fights("scheduled")[0];
-  return `
-    <div class="grid wide">
-      <div class="card hero">
-        <h3>Fight Night Control</h3>
-        <p>Real app page. The Torn userscript is only the launcher now.</p>
-        <span class="pill good">Prediction points only</span>
-        <div class="row" style="margin-top:8px">
-          <button class="green" onclick="setTab('fightcard')">Fight Card</button>
-          <button class="blue" onclick="setTab('fighters')">Fighters</button><button class="blue" onclick="setTab('matchmaking')">Matchmaking</button><button class="blue" onclick="setTab('myfighter')">My Fighter</button>
-          <button class="gold" onclick="setTab('picks')">Picks</button><button class="green" onclick="setTab('points')">Get Points</button><button class="blue admin-only-posts-btn" onclick="setTab('announcements')" style="display:none">Posts</button>
-          ${isAdmin()?`<button class="red" onclick="setTab('admin')">Admin</button>`:""}
-        </div>
-      </div>
-      <div class="card">
-        <h3>Numbers</h3>
-        <span class="pill live">Live ${fights("live").length}</span>
-        <span class="pill warn">Scheduled ${fights("scheduled").length}</span>
-        <span class="pill good">Done ${fights("done").length}</span>
-        <span class="pill">Fighters ${(STATE.fighters||[]).length}</span>
-        <span class="pill">Belts ${(STATE.belts||[]).length}</span>
-        
-      </div>
-      <div class="card">
-        <h3>Top Fighter</h3>
-        ${top ? `<b>${esc(top.nickname||top.name)}</b><br><span class="pill">Rank ${top.rank_points}</span><span class="pill">Record ${top.record_w}-${top.record_l}</span>` : `<div class="empty">No fighters yet.</div>`}
-      </div>
+
+function nextFightHeroHtml(){
+  const fights = (STATE.fights||[]).filter(f=>["live","scheduled"].includes(String(f.status||"")));
+  if(!fights.length) return `<div class="card hero"><h3>🥊 Next Fight</h3><div class="empty">No upcoming fight yet.</div></div>`;
+  const f = fights[0];
+  return `<div class="card hero"><h3>🥊 Next Fight</h3>
+    <div class="ufc-match">
+      <div class="ufc-fighter left"><div class="ufc-name">${esc(f.fighter_a_nick||f.fighter_a_name||"Fighter A")}</div><div class="ufc-sub">Fighter A</div></div>
+      <div class="ufc-vs">VS</div>
+      <div class="ufc-fighter right"><div class="ufc-name">${esc(f.fighter_b_nick||f.fighter_b_name||"Fighter B")}</div><div class="ufc-sub">Fighter B</div></div>
     </div>
-    <div class="card" style="margin-top:10px"><h3>My Notifications</h3>${notificationPill()}<button class="red" onclick="clearReadNotifications()">Clear Read Notifications</button>${notificationList(3)}</div><div class="card" style="margin-top:10px"><h3>Latest Alerts</h3>${alertsHtml()}</div>
-    <div class="card" style="margin-top:10px">
-      <h3>Next Fight</h3>
-      ${next ? fightCard(next,false) : `<div class="empty">No live or scheduled fight yet.</div>`}
-    </div>
-  `;
+    <div class="ufc-details"><div class="ufc-detail"><b>Status</b><br>${esc(f.status||"scheduled")}</div><div class="ufc-detail"><b>Rules</b><br>${esc(f.rule_set||"Chaos rules")}</div><div class="ufc-detail"><b>Start</b><br>${esc(f.starts_at||"TBA")}</div></div>
+    <div class="ufc-actions"><button class="gold" onclick="setTab('fightcard')">Open Fight Card</button><button class="green" onclick="setTab('picks')">Pick / Wager</button></div>
+  </div>`;
+}
+function fighterCardArt(f){
+  if(!f) return `<div class="empty">Register a fighter to generate your card.</div>`;
+  const points = Number(f.rank_points||0), wins = Number(f.record_w||0), losses = Number(f.record_l||0);
+  const icons = ["🥊","🔥","💀","🛏️","⚔️","🤡","👑","🧨"];
+  const icon = icons[Math.abs(Number(f.id||0)) % icons.length];
+  let title = "Chaos Rookie";
+  if(points >= 1000) title = "Main Event Menace";
+  else if(points >= 500) title = "Cage Goblin";
+  else if(wins >= 5) title = "Pillow Assassin";
+  else if(losses >= 5) title = "Professional Punch Sponge";
+  else if(wins > losses) title = "Meme Weapon Specialist";
+  return `<div class="fighter-card-art"><div class="avatar">${icon}</div><div class="name">${esc(f.nickname||f.name||"Fighter")}</div><div class="tag">${esc(title)}</div><div class="statline"><div><b>Rank</b><br>${points}</div><div><b>Record</b><br>${wins}-${losses}</div><div><b>Matched</b><br>${Number(f.matchmaking_count||0)}</div><div><b>Style</b><br>Unhinged</div></div></div>`;
 }
 
+function overview(){
+  return `<div class="grid wide">
+    <div class="card hero"><h3>🥊 Fight Night Controls</h3><p class="muted">Torn Fight Club is now running as a real app page. The Torn userscript is only the launcher.</p><button class="gold" onclick="setTab('fightcard')">Fight Card</button><button class="green" onclick="setTab('matchmaking')">Matchmaking</button><button class="blue" onclick="setTab('fighters')">Register Fighter</button><button class="blue" onclick="setTab('points')">Get Points</button></div>
+    ${nextFightHeroHtml()}
+    <div class="card"><h3>Notifications</h3>${typeof notificationPill==="function"?notificationPill():""}${typeof notificationList==="function"?notificationList(3):`<div class="empty">No notifications.</div>`}</div>
+    <div class="card"><h3>Quick Status</h3><div class="mini">Fighters: ${(STATE.fighters||[]).length}</div><div class="mini">Fights: ${(STATE.fights||[]).length}</div><div class="mini">Open challenges: ${(STATE.challenges||[]).filter(c=>!['fight_created','converted'].includes(String(c.status||''))).filter(c=>String(c.status||"")==="pending").length}</div><div class="mini">Your points: ${STATE.user ? esc(STATE.user.prediction_points||0) : "Login needed"}</div></div>
+  </div>`;
+}
 
 function fightStatusClass(status){
   return status==="live" ? "live" : status==="done" ? "good" : status==="cancelled" ? "" : "warn";
@@ -585,7 +591,7 @@ function fighters(){
     <div class="grid wide">
       <div class="card hero"><h3>Fighters</h3><span class="pill">Total ${(STATE.fighters||[]).length}</span></div>
       <div class="card"><h3>Register</h3>${STATE.user ? `<select id="regEvent">${eventOptions()}</select><input id="nick" placeholder="Nickname"><input id="range" placeholder="Stats class"><button class="green" onclick="registerFighter()">Register</button>` : `<div class="empty">Login first.</div>`}</div>
-      <div class="card private"><h3>Private Battle Stats</h3>${privateStats()}</div>
+      <div class="card private"><h3></h3>${privateStats()}</div>
     </div>
     <div class="grid wide" style="margin-top:10px">
       ${(STATE.fighters||[]).map((f,i)=>`<div class="card"><h3><span class="rank">#${i+1}</span>${esc(f.nickname||f.name)}</h3><div>${esc(f.name)} [${f.torn_id}]</div><div class="muted">${esc(f.stats_range||"No range")}</div><div>${esc(f.loadout||"No loadout")}</div><span class="pill">Record ${f.record_w}-${f.record_l}</span><span class="pill">Rank ${f.rank_points}</span></div>`).join("") || `<div class="empty">No fighters yet.</div>`}
@@ -717,88 +723,14 @@ function myPickRows(){
 }
 
 function myfighter(){
-  if(!STATE.user){
-    return `<div class="card hero"><h3>My Fighter Dashboard</h3><div class="empty">Login in Settings first.</div><button class="blue" onclick="setTab('settings')">Go to Settings / Re-login</button></div>`;
-  }
-
-  const mine = myProfiles();
-  const profile = mine[0] || null;
-  const allMyFights = profile ? fightsForFighter(profile.id) : [];
-  const upcoming = profile ? fightsForFighter(profile.id, ["scheduled","live"]) : [];
-  const completed = profile ? fightsForFighter(profile.id, ["done"]) : [];
-  const pickRows = myPickRows();
-
-  return `
-    <div class="grid wide">
-      <div class="card hero">
-        <h3>👤 My Fighter Dashboard</h3>
-        <p class="muted">Your profile, fights, picks, rank, and private stats in one place.</p>
-        <span class="pill">Logged in as ${esc(STATE.user.name)} [${STATE.user.torn_id}]</span>
-        <span class="pill">Prediction points ${STATE.user.prediction_points}</span>
-      </div>
-
-      <div class="card private">
-        <h3>🔒 My Private Battle Stats</h3>
-        ${privateStats()}
-      </div>
-
-      <div class="card">
-        <h3>🥊 My Fighter Profile</h3>
-        ${profile ? `
-          <h3>${esc(profile.nickname||profile.name)}</h3>
-          <div>${esc(profile.name)} [${profile.torn_id}]</div>
-          
-          <div>${esc(profile.loadout||"No loadout")}</div>
-          <span class="pill">Record ${profile.record_w}-${profile.record_l}</span>
-          <span class="pill">Rank ${profile.rank_points}</span>
-          <span class="pill">Fighter ID ${profile.id}</span>
-        ` : `
-          <div class="empty">You have not registered as a fighter yet.</div>
-          <button class="green" onclick="setTab('fighters')">Register Fighter</button>
-        `}
-      </div>
-    </div>
-
-    <div class="section-title">My Fight Summary</div>
-    <div class="grid wide">
-      <div class="card">
-        <h3>📅 Upcoming / Live Fights</h3>
-        ${upcoming.length ? upcoming.map(f=>fightCard(f,false)).join("") : `<div class="empty">No upcoming fights for you.</div>`}
-      </div>
-      <div class="card">
-        <h3>✅ Completed Fights</h3>
-        ${completed.length ? completed.map(f=>fightCard(f,false)).join("") : `<div class="empty">No completed fights yet.</div>`}
-      </div>
-    </div>
-
-    <div class="section-title">My Picks</div>
-    <div class="grid wide">
-      <div class="card">
-        <h3>💰 Pick History</h3>
-        ${pickRows.length ? pickRows.map(row=>{
-          const p = row.prediction;
-          const f = row.fight;
-          return `<div class="mini">
-            <b>Fight ${esc(p.fight_id)}</b> — Picked ${esc(fighterName(p.pick_fighter_id))} for ${esc(p.points)} pts
-            <br><span class="muted">${f ? esc((f.fighter_a_nick||f.fighter_a_name||"A") + " vs " + (f.fighter_b_nick||f.fighter_b_name||"B")) : "Fight not found"} • ${esc(p.status||"")}</span>
-          </div>`;
-        }).join("") : `<div class="empty">No picks yet.</div>`}
-      </div>
-
-      <div class="card">
-        <h3>📊 My Numbers</h3>
-        <span class="pill">Profiles ${mine.length}</span>
-        <span class="pill">All fights ${allMyFights.length}</span>
-        <span class="pill">Upcoming ${upcoming.length}</span>
-        <span class="pill">Completed ${completed.length}</span>
-        <span class="pill">Picks ${pickRows.length}</span>
-      </div>
-    </div>
-  `;
+  const mine = STATE.user ? (STATE.fighters||[]).filter(f=>Number(f.torn_id)===Number(STATE.user.torn_id)) : [];
+  const f = mine[0];
+  return `<div class="grid wide">
+    <div class="card hero"><h3>My Fighter</h3><p class="muted">Your fighter profile and generated Fight Club card.</p>${STATE.user ? `<button class="blue" onclick="setTab('fighters')">Register / Update Fighter</button>` : `<button class="blue" onclick="setTab('settings')">Login</button>`}</div>
+    <div class="card"><h3>My Fighter Profile</h3>${f ? `<div class="mini"><b>${esc(f.nickname||f.name)}</b><br>Record ${esc(f.record_w||0)}-${esc(f.record_l||0)} • Rank ${esc(f.rank_points||0)}</div>` : `<div class="empty">No fighter registered yet.</div>`}</div>
+    <div class="card"><h3>Generated Fighter Card</h3>${fighterCardArt(f)}</div>
+  </div>`;
 }
-
-
-
 
 function fmtStatsRange(total, range){total=Number(total||0);range=Number(range||5000000);return total?`${(total-range).toLocaleString()} - ${(total+range).toLocaleString()}`:"Private until queued";}
 function myQueueEntry(){
@@ -824,7 +756,7 @@ function matchmaking(){
 
 function challenges(){
   const mine = myProfiles();
-  const pending = (STATE.challenges||[]).filter(c=>c.status==="pending");
+  const pending = (STATE.challenges||[]).filter(c=>!['fight_created','converted'].includes(String(c.status||''))).filter(c=>c.status==="pending");
   return `
     <div class="card hero"><h3>🥊 Challenges / Callouts</h3><p class="muted">Call out another fighter. Admin can approve or convert it into a scheduled fight.</p></div>
     <div class="grid wide" style="margin-top:10px">
@@ -843,7 +775,7 @@ function challenges(){
       </div>
     </div>
     <div class="section-title">Challenge History</div>
-    <div class="grid wide">${(STATE.challenges||[]).map(c=>challengeCard(c)).join("") || `<div class="empty">No challenges yet.</div>`}</div>
+    <div class="grid wide">${(STATE.challenges||[]).filter(c=>!['fight_created','converted'].includes(String(c.status||''))).map(c=>challengeCard(c)).join("") || `<div class="empty">No challenges yet.</div>`}</div>
   `;
 }
 function challengeCard(c){
@@ -864,24 +796,13 @@ function picks(){
 function leaderboard(){
   const fs = [...(STATE.fighters||[])].sort((a,b)=>(b.rank_points||0)-(a.rank_points||0)).slice(0,5);
   const topUsers = (STATE.leaderboard||[]).slice(0,5);
+  const mmTop = (STATE.matchmaking_top5||[]).slice(0,5);
   const allTime = (STATE.all_time_rank_records||[]).slice(0,10);
-
   return `<div class="grid wide">
-    <div class="card">
-      <h3>Current Top 5 Fighters</h3>
-      ${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${esc(f.rank_points||0)} <span class="muted">Record ${esc(f.record_w||0)}-${esc(f.record_l||0)}</span></div>`).join("") || `<div class="empty">No current ranks yet.</div>`}
-    </div>
-
-    <div class="card">
-      <h3>Top 5 Prediction Points</h3>
-      ${topUsers.map((u,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(u.name)}</b> — ${esc(u.prediction_points)} pts</div>`).join("") || `<div class="empty">None yet.</div>`}
-    </div>
-
-    <div class="card wide-card">
-      <h3>All-Time Rank Records</h3>
-      <p class="muted">Saved snapshots from rank resets. These stay even when current ranks are cleared.</p>
-      ${allTime.map((r,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(r.nickname||r.name)}</b> archived rank ${esc(r.rank_points||0)} <span class="muted">Record ${esc(r.record_w||0)}-${esc(r.record_l||0)} • ${esc(r.reset_label||"Reset")} • ${esc(r.created_at||"")}</span></div>`).join("") || `<div class="empty">No all-time records saved yet.</div>`}
-    </div>
+    <div class="card"><h3>Current Top 5 Fighters</h3>${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${esc(f.rank_points||0)} <span class="muted">Record ${esc(f.record_w||0)}-${esc(f.record_l||0)}</span></div>`).join("") || `<div class="empty">No current ranks yet.</div>`}</div>
+    <div class="card"><h3>Matchmaking Top 5</h3>${mmTop.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> matched ${esc(f.matchmaking_count||0)} times <span class="muted">rank ${esc(f.rank_points||0)}</span></div>`).join("") || `<div class="empty">No matchmaking records yet.</div>`}</div>
+    <div class="card"><h3>Top 5 Prediction Points</h3>${topUsers.map((u,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(u.name)}</b> — ${esc(u.prediction_points)} pts</div>`).join("") || `<div class="empty">None yet.</div>`}</div>
+    <div class="card wide-card"><h3>All-Time Rank Records</h3><p class="muted">Saved snapshots from rank resets. These stay even when current ranks are cleared.</p>${allTime.map((r,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(r.nickname||r.name)}</b> archived rank ${esc(r.rank_points||0)} <span class="muted">Record ${esc(r.record_w||0)}-${esc(r.record_l||0)} • ${esc(r.reset_label||"Reset")} • ${esc(r.created_at||"")}</span></div>`).join("") || `<div class="empty">No all-time records saved yet.</div>`}</div>
   </div>`;
 }
 
@@ -1017,9 +938,12 @@ function ideas(){
 }
 
 function rules(){
-  return `<div class="grid wide"><div class="card hero"><h3>Rules</h3><p><b>First rule:</b> You absolutely talk about Fight Club.</p><p class="muted">Keep fights fair, funny, and organized. Follow the selected match rules/loadout for the fight.</p></div><div class="card"><h3>Win Conditions</h3><div>💀 KO</div><div>🩸 Lowest HP</div><div>🎯 Most crits</div></div></div>`;
+  return `<div class="grid wide">
+    <div class="card hero"><h3>Rules</h3><p><b>First rule:</b> You absolutely talk about Fight Club.</p><p class="muted">Keep fights fair, funny, and organized. Follow the selected match rules/loadout for the fight.</p></div>
+    <div class="card"><h3>Win Conditions</h3><div class="mini">💀 KO</div><div class="mini">🩸 Lowest HP at finish</div><div class="mini">🎯 Most crits</div><div class="mini">⏱️ Fastest win</div><div class="mini">🛡️ Most HP remaining</div><div class="mini">🤡 Funniest loadout win</div><div class="mini">⚔️ Melee-only win</div><div class="mini">🛏️ Pillow / joke weapon win</div><div class="mini">👑 Admin decision</div><div class="mini">📸 Proof-confirmed result</div></div>
+    <div class="card"><h3>Fight Night Rules</h3><div class="mini">No auto-attacking or automated Torn actions.</div><div class="mini">Follow the fight card rules for the match.</div><div class="mini">Submit proof in Fight Logs when done.</div><div class="mini">Admins settle disputes and approve final results.</div></div>
+  </div>`;
 }
-
 
 function pointRateText(){
   const s = STATE.point_settings || {item_name:"Xanax",item_amount:1,points_amount:100,pay_to_name:"Slimyfleshlite",pay_to_torn_id:1905671};
