@@ -106,7 +106,7 @@ const BASE = "https://torn-fight-club.onrender.com";
 let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
-  ok: true, user: null, events: [], fighters: [], fights: [], ideas: [], leaderboard: [],
+  ok: true, user: null, events: [], fighters: [], fights: [], ideas: [], leaderboard: [], all_time_rank_records: [],
   my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_logs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], fight_logs: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
 };
 
@@ -152,7 +152,7 @@ async function api(path, method="GET", body=null){
 function normalizeState(data){
   data = data || {};
   const defaults = {
-    ok:true, user:null, events:[], fighters:[], fights:[], ideas:[], leaderboard:[],
+    ok:true, user:null, events:[], fighters:[], fights:[], ideas:[], leaderboard:[], all_time_rank_records:[], all_time_rank_records:[],
     my_predictions:[], my_notifications:[], tournaments:[], tournament_entries:[],
     belts:[], teams:[], referees:[], audit:[], ref_checklists:[], fight_proofs:[], fight_logs:[],
     challenges:[], alerts:[], fight_logs:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[]
@@ -520,7 +520,7 @@ function fighters(){
   return `
     <div class="grid wide">
       <div class="card hero"><h3>Fighters</h3><span class="pill">Total ${(STATE.fighters||[]).length}</span></div>
-      <div class="card"><h3>Register</h3>${STATE.user ? `<select id="regEvent">${eventOptions()}</select><input id="nick" placeholder="Nickname"><input id="range" placeholder="Stats class"><input id="loadout" placeholder="Funny loadout"><button class="green" onclick="registerFighter()">Register</button>` : `<div class="empty">Login first.</div>`}</div>
+      <div class="card"><h3>Register</h3>${STATE.user ? `<select id="regEvent">${eventOptions()}</select><input id="nick" placeholder="Nickname"><input id="range" placeholder="Stats class"><button class="green" onclick="registerFighter()">Register</button>` : `<div class="empty">Login first.</div>`}</div>
       <div class="card private"><h3>Private Battle Stats</h3>${privateStats()}</div>
     </div>
     <div class="grid wide" style="margin-top:10px">
@@ -683,7 +683,7 @@ function myfighter(){
         ${profile ? `
           <h3>${esc(profile.nickname||profile.name)}</h3>
           <div>${esc(profile.name)} [${profile.torn_id}]</div>
-          <div class="muted">${esc(profile.stats_range||"No stats range")}</div>
+          
           <div>${esc(profile.loadout||"No loadout")}</div>
           <span class="pill">Record ${profile.record_w}-${profile.record_l}</span>
           <span class="pill">Rank ${profile.rank_points}</span>
@@ -797,7 +797,25 @@ function picks(){
 function leaderboard(){
   const fs = [...(STATE.fighters||[])].sort((a,b)=>(b.rank_points||0)-(a.rank_points||0)).slice(0,5);
   const topUsers = (STATE.leaderboard||[]).slice(0,5);
-  return `<div class="grid wide"><div class="card"><h3>Top 5 Prediction Points</h3>${topUsers.map((u,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(u.name)}</b> — ${u.prediction_points} pts</div>`).join("") || `<div class="empty">None yet.</div>`}</div><div class="card"><h3>Top 5 Fighters</h3>${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${f.rank_points}</div>`).join("") || `<div class="empty">None yet.</div>`}</div></div>`;
+  const allTime = (STATE.all_time_rank_records||[]).slice(0,10);
+
+  return `<div class="grid wide">
+    <div class="card">
+      <h3>Current Top 5 Fighters</h3>
+      ${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${esc(f.rank_points||0)} <span class="muted">Record ${esc(f.record_w||0)}-${esc(f.record_l||0)}</span></div>`).join("") || `<div class="empty">No current ranks yet.</div>`}
+    </div>
+
+    <div class="card">
+      <h3>Top 5 Prediction Points</h3>
+      ${topUsers.map((u,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(u.name)}</b> — ${esc(u.prediction_points)} pts</div>`).join("") || `<div class="empty">None yet.</div>`}
+    </div>
+
+    <div class="card wide-card">
+      <h3>All-Time Rank Records</h3>
+      <p class="muted">Saved snapshots from rank resets. These stay even when current ranks are cleared.</p>
+      ${allTime.map((r,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(r.nickname||r.name)}</b> archived rank ${esc(r.rank_points||0)} <span class="muted">Record ${esc(r.record_w||0)}-${esc(r.record_l||0)} • ${esc(r.reset_label||"Reset")} • ${esc(r.created_at||"")}</span></div>`).join("") || `<div class="empty">No all-time records saved yet.</div>`}
+    </div>
+  </div>`;
 }
 
 function tournaments(){
@@ -1198,6 +1216,18 @@ return `
     <div class="admin-grid">
       <div class="card belt"><h3>Edit / Delete Belt</h3><select id="editBelt">${beltOptions()}</select><input id="editBeltName" placeholder="Belt name"><input id="editBeltDivision" placeholder="Division"><select id="editBeltHolder">${fighterOptions("Holder / vacant")}</select><select id="editBeltStatus"><option value="">Leave status</option><option value="active">Active</option><option value="retired">Retired</option><option value="vacant">Vacant</option></select><button class="gold" onclick="updateBelt()">Save Belt</button><button class="red" onclick="deleteBelt()">Delete Belt</button></div>
     </div>
+
+<div class="section-title">Ranks Reset</div>
+<div class="admin-grid">
+  <div class="card">
+    <h3>Reset Current Ranks</h3>
+    <p class="muted">This archives the current fighter ranks into All-Time Rank Records, then clears current rank points. Use at the end of a season/event.</p>
+    <input id="rankResetLabel" placeholder="Reset label, e.g. Season 1 / May Fight Night">
+    <label class="mini"><input id="rankResetRecords" type="checkbox" style="width:auto;margin-right:6px">Also reset win/loss records</label>
+    <input id="rankResetConfirm" placeholder="Type RESET">
+    <button class="red" onclick="resetCurrentRanks()">Reset Current Ranks</button>
+  </div>
+</div>
 <div class="section-title">Admin Fight Logs</div><div class="admin-grid"><div class="card"><h3>Pending / Recent Fight Logs</h3>${fightLogsList()}</div></div><div class="section-title">Alerts / Notifications</div>
     <div class="admin-grid">
       <div class="card"><h3>Create Alert</h3><input id="alertTitle" placeholder="Alert title"><input id="alertBody" placeholder="Alert body"><select id="alertType"><option value="info">Info</option><option value="fight">Fight</option><option value="tournament">Tournament</option><option value="result">Result</option></select><button class="green" onclick="createAlert()">Create Alert</button></div>
@@ -1223,7 +1253,8 @@ async function login(){
 async function logout(){TOKEN="";localStorage.removeItem("tfc_token");localStorage.removeItem("tfc_private_battle_stats");await refresh();}
 async function action(path, body, msg){try{await api(path,"POST",body);toast(msg);await refresh();}catch(e){toast(e.message);}}
 
-function registerFighter(){action("/api/fighters/register",{event_id:$("regEvent").value,nickname:$("nick").value,stats_range:$("range").value,loadout:$("loadout").value},"Registered.");}
+function registerFighter(){action("/api/fighters/register",{event_id:$("regEvent").value,nickname:$("nick").value,
+},"Registered.");}
 function submitIdea(){action("/api/ideas",{idea:$("idea").value},"Submitted.");}
 function makePick(fight,pick){action("/api/predictions",{fight_id:fight,pick_fighter_id:pick,points:$("pts-"+fight).value},"Pick saved.");}
 function createEvent(){action("/api/admin/events",{title:$("evTitle").value,theme:$("evTheme").value,starts_at:$("evStart").value},"Event created.");}
@@ -1568,6 +1599,16 @@ function reviewFightLog(logId,status){
 function clearReadNotifications(){
   if(!confirm("Remove all read notifications? Unread notifications will stay.")) return;
   action("/api/notifications/clear-read",{},"Read notifications cleared.");
+}
+
+
+function resetCurrentRanks(){
+  if(!confirm("Archive current ranks and reset current rank points?")) return;
+  action("/api/admin/ranks/reset",{
+    reset_label:$("rankResetLabel").value || "Rank reset",
+    reset_records:$("rankResetRecords") ? $("rankResetRecords").checked : false,
+    confirm:$("rankResetConfirm").value
+  },"Current ranks reset and all-time record saved.");
 }
 
 render();
