@@ -897,7 +897,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "5.1.1",
+        "version": "5.1.2",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -1221,7 +1221,9 @@ def register_fighter():
     loadout = (data.get("loadout") or "").strip()[:180]
 
     with db() as con:
-        con.execute("DELETE FROM fighters WHERE torn_id=? AND active=1", (request.user["torn_id"],))
+        existing_fighter = con.execute("SELECT id FROM fighters WHERE torn_id=? AND active=1 LIMIT 1", (request.user["torn_id"],)).fetchone()
+        if existing_fighter:
+            return jsonify({"ok": False, "error": "You already have a fighter registered. Only one fighter profile is allowed."}), 400
         con.execute("""
             INSERT INTO fighters(event_id, torn_id, name, nickname, stats_range, loadout, created_at)
             VALUES(?,?,?,?,?,?,?)
