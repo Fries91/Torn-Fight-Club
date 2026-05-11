@@ -2,6 +2,7 @@ import os
 import sqlite3
 import secrets
 import time
+import random
 import json
 from datetime import datetime, timezone
 from functools import wraps
@@ -377,6 +378,45 @@ def init_db():
 
 
 
+
+
+            CREATE TABLE IF NOT EXISTS event_registrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                user_torn_id INTEGER NOT NULL,
+                user_name TEXT,
+                fighter_id INTEGER,
+                fighter_name TEXT,
+                status TEXT NOT NULL DEFAULT 'registered',
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(event_id, user_torn_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS event_brackets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                bracket_style TEXT NOT NULL DEFAULT 'single_elimination',
+                title TEXT,
+                generated_by INTEGER,
+                generated_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'generated'
+            );
+
+            CREATE TABLE IF NOT EXISTS event_bracket_pairs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bracket_id INTEGER NOT NULL,
+                event_id INTEGER NOT NULL,
+                round_no INTEGER NOT NULL DEFAULT 1,
+                match_no INTEGER NOT NULL DEFAULT 1,
+                fighter_a_id INTEGER,
+                fighter_b_id INTEGER,
+                user_a_torn_id INTEGER,
+                user_b_torn_id INTEGER,
+                name_a TEXT,
+                name_b TEXT,
+                status TEXT NOT NULL DEFAULT 'pending'
+            );
 
             CREATE TABLE IF NOT EXISTS managers (
                 torn_id INTEGER PRIMARY KEY,
@@ -857,7 +897,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "5.0.2",
+        "version": "5.1.1",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -1120,11 +1160,25 @@ def state():
         ORDER BY COALESCE(matchmaking_count,0) DESC, rank_points DESC, record_w DESC
         LIMIT 5
     """).fetchall()]
+    event_registrations = []
+    event_brackets = []
+    event_bracket_pairs = []
+    if token_user and token_user.get("role") == "admin":
+        event_registrations = [dict(x) for x in con.execute("SELECT * FROM event_registrations ORDER BY id DESC LIMIT 300").fetchall()]
+        event_brackets = [dict(x) for x in con.execute("SELECT * FROM event_brackets ORDER BY id DESC LIMIT 100").fetchall()]
+        event_bracket_pairs = [dict(x) for x in con.execute("SELECT * FROM event_bracket_pairs ORDER BY bracket_id DESC, round_no ASC, match_no ASC LIMIT 500").fetchall()]
+    elif token_user:
+        event_registrations = [dict(x) for x in con.execute("SELECT * FROM event_registrations WHERE user_torn_id=? ORDER BY id DESC LIMIT 100", (token_user["torn_id"],)).fetchall()]
+        event_brackets = [dict(x) for x in con.execute("SELECT * FROM event_brackets ORDER BY id DESC LIMIT 50").fetchall()]
+        event_bracket_pairs = [dict(x) for x in con.execute("SELECT * FROM event_bracket_pairs ORDER BY bracket_id DESC, round_no ASC, match_no ASC LIMIT 300").fetchall()]
     return jsonify({
         "ok": True,
         "user": public_user(token_user),
         "admins": sorted(list(ADMIN_IDS)),
         "events": events,
+        "event_registrations": event_registrations,
+        "event_brackets": event_brackets,
+        "event_bracket_pairs": event_bracket_pairs,
         "fighters": fighters,
         "matchmaking_top5": matchmaking_top5,
         "fights": fights,
@@ -1167,6 +1221,7 @@ def register_fighter():
     loadout = (data.get("loadout") or "").strip()[:180]
 
     with db() as con:
+        con.execute("DELETE FROM fighters WHERE torn_id=? AND active=1", (request.user["torn_id"],))
         con.execute("""
             INSERT INTO fighters(event_id, torn_id, name, nickname, stats_range, loadout, created_at)
             VALUES(?,?,?,?,?,?,?)
@@ -2944,6 +2999,195 @@ def health_db():
             except Exception as e:
                 checks[table] = "ERR: " + str(e)
     return jsonify({"ok": True, "checks": checks})
+
+
+@app.post("/api/events/<int:event_id>/register")
+@require_login
+def register_for_event(event_id):
+    data = request.get_json(force=True, silent=True) or {}
+    fighter_id = data.get("fighter_id")
+    fighter_id = int(fighter_id) if fighter_id else None
+    notes = (data.get("notes") or "").strip()[:500]
+
+    with db() as con:
+        ev = con.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+        if not ev:
+            return jsonify({"ok": False, "error": "Event not found"}), 404
+
+        fighter_name = request.user.get("name")
+        if fighter_id:
+            f = con.execute("SELECT * FROM fighters WHERE id=? AND torn_id=? AND active=1", (fighter_id, request.user["torn_id"])).fetchone()
+            if not f:
+                return jsonify({"ok": False, "error": "That fighter profile is not yours"}), 403
+            fighter_name = f["nickname"] or f["name"]
+
+        con.execute("""
+            INSERT INTO event_registrations(event_id, user_torn_id, user_name, fighter_id, fighter_name, status, notes, created_at)
+            VALUES(?,?,?,?,?,?,?,?)
+            ON CONFLICT(event_id, user_torn_id) DO UPDATE SET
+                fighter_id=excluded.fighter_id,
+                fighter_name=excluded.fighter_name,
+                status='registered',
+                notes=excluded.notes,
+                created_at=excluded.created_at
+        """, (event_id, request.user["torn_id"], request.user.get("name"), fighter_id, fighter_name, "registered", notes, now_iso()))
+        audit(con, request.user["torn_id"], "register_for_event", f"event:{event_id}", {})
+
+    return jsonify({"ok": True})
+
+
+@app.post("/api/events/<int:event_id>/unregister")
+@require_login
+def unregister_for_event(event_id):
+    with db() as con:
+        con.execute("DELETE FROM event_registrations WHERE event_id=? AND user_torn_id=?", (event_id, request.user["torn_id"]))
+        audit(con, request.user["torn_id"], "unregister_for_event", f"event:{event_id}", {})
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/events/<int:event_id>/generate-bracket")
+@require_admin_or_perm("fights")
+def generate_event_bracket(event_id):
+    data = request.get_json(force=True, silent=True) or {}
+    style = (data.get("bracket_style") or "single_elimination").strip()[:80]
+    title = (data.get("title") or "").strip()[:120]
+
+    allowed = {"single_elimination", "random_pairs", "round_robin", "king_of_the_hill", "seeded_top_bottom"}
+    if style not in allowed:
+        return jsonify({"ok": False, "error": "Invalid bracket style"}), 400
+
+    with db() as con:
+        ev = con.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+        if not ev:
+            return jsonify({"ok": False, "error": "Event not found"}), 404
+
+        regs = [dict(x) for x in con.execute("""
+            SELECT *
+            FROM event_registrations
+            WHERE event_id=? AND status='registered'
+            ORDER BY id ASC
+        """, (event_id,)).fetchall()]
+
+        if len(regs) < 2:
+            return jsonify({"ok": False, "error": "Need at least 2 registered fighters"}), 400
+
+        if style in ("single_elimination", "random_pairs", "king_of_the_hill"):
+            random.shuffle(regs)
+        elif style == "seeded_top_bottom":
+            # simple deterministic seed style: first vs last, second vs second-last
+            regs = regs[:]
+
+        cur = con.execute("""
+            INSERT INTO event_brackets(event_id, bracket_style, title, generated_by, generated_at, status)
+            VALUES(?,?,?,?,?,?)
+        """, (event_id, style, title or f"{ev['name']} bracket", request.user["torn_id"], now_iso(), "generated"))
+        bracket_id = cur.lastrowid
+
+        pairs = []
+        if style == "round_robin":
+            match_no = 1
+            for i in range(len(regs)):
+                for j in range(i + 1, len(regs)):
+                    pairs.append((1, match_no, regs[i], regs[j]))
+                    match_no += 1
+        elif style == "king_of_the_hill":
+            # first player waits as "king", everyone else lines up as challengers
+            king = regs[0]
+            match_no = 1
+            for challenger in regs[1:]:
+                pairs.append((1, match_no, king, challenger))
+                match_no += 1
+        else:
+            if style == "seeded_top_bottom":
+                ordered = []
+                left = 0
+                right = len(regs) - 1
+                while left <= right:
+                    a = regs[left]
+                    b = regs[right] if right != left else None
+                    pairs.append((1, len(pairs) + 1, a, b))
+                    left += 1
+                    right -= 1
+            else:
+                for i in range(0, len(regs), 2):
+                    a = regs[i]
+                    b = regs[i+1] if i+1 < len(regs) else None
+                    pairs.append((1, len(pairs) + 1, a, b))
+
+        for round_no, match_no, a, b in pairs:
+            con.execute("""
+                INSERT INTO event_bracket_pairs(
+                    bracket_id, event_id, round_no, match_no,
+                    fighter_a_id, fighter_b_id, user_a_torn_id, user_b_torn_id,
+                    name_a, name_b, status
+                )
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                bracket_id, event_id, round_no, match_no,
+                a.get("fighter_id"), b.get("fighter_id") if b else None,
+                a.get("user_torn_id"), b.get("user_torn_id") if b else None,
+                a.get("fighter_name") or a.get("user_name"),
+                (b.get("fighter_name") or b.get("user_name")) if b else "BYE",
+                "pending",
+            ))
+
+        audit(con, request.user["torn_id"], "generate_event_bracket", f"event:{event_id}", {"style": style, "bracket_id": bracket_id, "pairs": len(pairs)})
+
+    return jsonify({"ok": True, "bracket_id": bracket_id, "pairs": len(pairs)})
+
+
+@app.post("/api/fighter/update-stats")
+@require_login
+def update_my_fighter_stats():
+    data = request.get_json(force=True, silent=True) or {}
+    api_key = (data.get("api_key") or "").strip()
+    if not api_key:
+        return jsonify({"ok": False, "error": "API key required to update current stats"}), 400
+
+    # Re-read user's private battlestats and save them. The key is not stored.
+    try:
+        basic = torn_basic_from_key(api_key)
+        torn_id = int(basic.get("player_id") or basic.get("id") or 0)
+        if torn_id != int(request.user["torn_id"]):
+            return jsonify({"ok": False, "error": "API key does not match your logged-in Torn account"}), 403
+        private_stats = torn_battlestats_from_key(api_key)
+    except Exception as e:
+        return jsonify({"ok": False, "error": "Could not read Torn battlestats: " + str(e)}), 400
+
+    if not private_stats:
+        return jsonify({"ok": False, "error": "No battle stats returned. Use a key that can read your own battlestats."}), 400
+
+    total_stats = int((private_stats or {}).get("total_battle_stats") or (private_stats or {}).get("total") or 0)
+    effective_stats = int((private_stats or {}).get("effective_battle_stats") or (private_stats or {}).get("effective_total_stats") or total_stats or 0)
+
+    with db() as con:
+        con.execute("""
+            UPDATE users
+            SET total_battle_stats=?, effective_battle_stats=?, private_stats_json=?,
+                battle_stats_updated_at=?, battle_stats_source=?
+            WHERE torn_id=?
+        """, (
+            total_stats,
+            effective_stats,
+            json.dumps(private_stats or {}),
+            now_iso(),
+            (private_stats or {}).get("stats_source") or "battlestats",
+            request.user["torn_id"],
+        ))
+
+        # Update their one active fighter with a private marker only; exact stats stay out of public UI.
+        con.execute("""
+            UPDATE fighters
+            SET stats_range=?, updated_at=?
+            WHERE torn_id=? AND active=1
+        """, ("Private / updated from API", now_iso(), request.user["torn_id"]))
+
+        audit(con, request.user["torn_id"], "update_my_fighter_stats", "fighter:stats", {
+            "total_saved": bool(total_stats),
+            "effective_saved": bool(effective_stats),
+        })
+
+    return jsonify({"ok": True, "total_saved": bool(total_stats), "effective_saved": bool(effective_stats)})
 
 
 if __name__ == "__main__":
