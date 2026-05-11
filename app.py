@@ -76,7 +76,12 @@ def init_db():
                 role TEXT NOT NULL DEFAULT 'member',
                 session_token TEXT,
                 session_created INTEGER,
-                prediction_points INTEGER NOT NULL DEFAULT 00,
+                prediction_points INTEGER NOT NULL DEFAULT 0,
+                total_battle_stats INTEGER NOT NULL DEFAULT 0,
+                effective_battle_stats INTEGER NOT NULL DEFAULT 0,
+                private_stats_json TEXT,
+                battle_stats_updated_at TEXT,
+                battle_stats_source TEXT,
                 created_at TEXT NOT NULL
             );
 
@@ -446,6 +451,12 @@ def init_db():
         add_column_if_missing(con, "fight_props", "option_c", "TEXT")
         add_column_if_missing(con, "fight_props", "option_d", "TEXT")
         add_column_if_missing(con, "fights", "created_at", "TEXT DEFAULT ''")
+        add_column_if_missing(con, "users", "total_battle_stats", "INTEGER NOT NULL DEFAULT 0")
+        add_column_if_missing(con, "users", "effective_battle_stats", "INTEGER NOT NULL DEFAULT 0")
+        add_column_if_missing(con, "users", "private_stats_json", "TEXT")
+        add_column_if_missing(con, "users", "battle_stats_updated_at", "TEXT")
+        add_column_if_missing(con, "users", "battle_stats_source", "TEXT")
+
 
         con.execute("UPDATE users SET role='member' WHERE torn_id NOT IN (?, ?)", tuple(ADMIN_IDS))
         for admin_id in ADMIN_IDS:
@@ -539,6 +550,8 @@ def parse_battle_stats(data):
         except Exception:
             return 0
 
+    # Torn battlestats usually returns these. Treat the total as the value used
+    # for matchmaking unless an explicit effective total exists.
     strength = num("strength")
     defense = num("defense")
     speed = num("speed")
@@ -552,7 +565,37 @@ def parse_battle_stats(data):
     except Exception:
         total = strength + defense + speed + dexterity
 
-    if strength == 0 and defense == 0 and speed == 0 and dexterity == 0 and total == 0:
+    # Support future/alternate effective stat field names if present.
+    effective_total = 0
+    for key in (
+        "effective_total",
+        "effective_battle_stats",
+        "effective_total_stats",
+        "total_effective_stats",
+        "effective",
+        "effective_stats",
+    ):
+        if key in data:
+            effective_total = num(key)
+            if effective_total:
+                break
+
+    if not effective_total:
+        effective_keys = [
+            ("strength_effective", "defense_effective", "speed_effective", "dexterity_effective"),
+            ("effective_strength", "effective_defense", "effective_speed", "effective_dexterity"),
+        ]
+        for keys in effective_keys:
+            if all(k in data for k in keys):
+                effective_total = sum(num(k) for k in keys)
+                if effective_total:
+                    break
+
+    # Fallback: if Torn only provides battlestats total, use it as the effective matching value.
+    if not effective_total:
+        effective_total = total
+
+    if strength == 0 and defense == 0 and speed == 0 and dexterity == 0 and total == 0 and effective_total == 0:
         return None
 
     return {
@@ -561,6 +604,10 @@ def parse_battle_stats(data):
         "speed": speed,
         "dexterity": dexterity,
         "total": total,
+        "total_battle_stats": total,
+        "effective_battle_stats": effective_total,
+        "effective_total_stats": effective_total,
+        "stats_source": "battlestats",
     }
 
 
@@ -642,22 +689,13 @@ def notify_challenge_fighters(con, challenge_id, title, body, notification_type=
 
 def get_total_battle_stats_from_user(user):
     """
-    Matchmaking uses effective battle stats first when available.
-    Falls back to raw total battle stats if effective stats are not stored/read yet.
-    Exact stats remain private.
+    Matchmaking uses stored effective battle stats first.
+    These are saved during API login, then kept private.
     """
-    effective_keys = (
-        "effective_battle_stats",
-        "effective_total_stats",
-        "total_effective_stats",
-        "battle_stats_effective",
-        "battlestats_effective",
-        "effective_stats",
-    )
-    for key in effective_keys:
+    for key in ("effective_battle_stats", "effective_total_stats", "total_effective_stats"):
         try:
             val = user.get(key) if hasattr(user, "get") else user[key]
-            if val is not None:
+            if val is not None and int(val) > 0:
                 return int(val)
         except Exception:
             pass
@@ -665,25 +703,18 @@ def get_total_battle_stats_from_user(user):
     try:
         raw = user.get("private_stats_json") if hasattr(user, "get") else user["private_stats_json"]
         if raw:
-            import json
             data = json.loads(raw)
-            for key in ("effective_total", "effective_battle_stats", "effective_total_stats", "total_effective_stats", "effective"):
-                if key in data and data[key] is not None:
+            for key in ("effective_battle_stats", "effective_total_stats", "effective_total", "total_effective_stats", "effective"):
+                if key in data and data[key] is not None and int(data[key]) > 0:
                     return int(data[key])
-            possible_sets = [
-                ("strength_effective", "defense_effective", "speed_effective", "dexterity_effective"),
-                ("effective_strength", "effective_defense", "effective_speed", "effective_dexterity"),
-            ]
-            for keys in possible_sets:
-                if all(k in data for k in keys):
-                    return sum(int(data.get(k) or 0) for k in keys)
     except Exception:
         pass
 
+    # Fallback to raw total if effective was not separately available.
     for key in ("total_battle_stats", "battle_stats_total", "total_stats", "battlestats_total"):
         try:
             val = user.get(key) if hasattr(user, "get") else user[key]
-            if val is not None:
+            if val is not None and int(val) > 0:
                 return int(val)
         except Exception:
             pass
@@ -691,10 +722,9 @@ def get_total_battle_stats_from_user(user):
     try:
         raw = user.get("private_stats_json") if hasattr(user, "get") else user["private_stats_json"]
         if raw:
-            import json
             data = json.loads(raw)
             for key in ("total", "total_battle_stats", "battle_stats_total"):
-                if key in data and data[key] is not None:
+                if key in data and data[key] is not None and int(data[key]) > 0:
                     return int(data[key])
     except Exception:
         pass
@@ -751,7 +781,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.9.5",
+        "version": "4.9.6",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -801,15 +831,32 @@ def login():
         created_at = existing["created_at"] if existing else now_iso()
         con.execute(
             """
-            INSERT INTO users(torn_id, name, role, session_token, session_created, prediction_points, created_at)
-            VALUES(?,?,?,?,?,?,?)
+            INSERT INTO users(
+                torn_id, name, role, session_token, session_created, prediction_points,
+                total_battle_stats, effective_battle_stats, private_stats_json,
+                battle_stats_updated_at, battle_stats_source, created_at
+            )
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(torn_id) DO UPDATE SET
               name=excluded.name,
               role=excluded.role,
               session_token=excluded.session_token,
-              session_created=excluded.session_created
+              session_created=excluded.session_created,
+              total_battle_stats=excluded.total_battle_stats,
+              effective_battle_stats=excluded.effective_battle_stats,
+              private_stats_json=excluded.private_stats_json,
+              battle_stats_updated_at=excluded.battle_stats_updated_at,
+              battle_stats_source=excluded.battle_stats_source
             """,
-            (torn_id, name, role, token, int(time.time()), points, created_at),
+            (
+                torn_id, name, role, token, int(time.time()), points,
+                int((private_battle_stats or {}).get("total_battle_stats") or (private_battle_stats or {}).get("total") or 0),
+                int((private_battle_stats or {}).get("effective_battle_stats") or (private_battle_stats or {}).get("effective_total_stats") or (private_battle_stats or {}).get("total") or 0),
+                json.dumps(private_battle_stats or {}),
+                now_iso() if private_battle_stats else None,
+                (private_battle_stats or {}).get("stats_source") if private_battle_stats else None,
+                created_at
+            ),
         )
 
     return jsonify({
@@ -2433,7 +2480,7 @@ def enter_matchmaking_queue():
         user = con.execute("SELECT * FROM users WHERE torn_id=?", (request.user["torn_id"],)).fetchone()
         total_stats = get_total_battle_stats_from_user(user or request.user)
         if total_stats < 1:
-            return jsonify({"ok": False, "error": "No effective/total battle stats found. Login with a Torn API key that can read your own battle stats first."}), 400
+            return jsonify({"ok": False, "error": "No effective/total battle stats saved yet. Go to Settings, log out, then log back in with a Torn API key that can read your own battle stats."}), 400
         if fighter_id:
             f = con.execute("SELECT * FROM fighters WHERE id=? AND torn_id=? AND active=1", (fighter_id, request.user["torn_id"])).fetchone()
             if not f:
