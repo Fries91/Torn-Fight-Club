@@ -164,8 +164,8 @@ const BASE = "https://torn-fight-club.onrender.com";
 let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
-  ok: true, user: null, events: [], event_registrations: [], event_brackets: [], event_bracket_pairs: [], fighters: [], matchmaking_top5: [], fights: [], ideas: [], leaderboard: [], all_time_rank_records: [],
-  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_logs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], fight_logs: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
+  ok: true, user: null, events: [], event_registrations: [], event_brackets: [], event_bracket_pairs: [], fighters: []_top5: [], fights: [], ideas: [], leaderboard: [], all_time_rank_records: [],
+  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_logs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], fight_logs: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[]_settings:{range_amount:5000000}, match_queue:[]_matches:[]_settings:{range_amount:5000000}, match_queue:[]_matches:[], reward_slots:[], reward_requests:[]_settings:{range_amount:5000000}, match_queue:[]_matches:[]_settings:{range_amount:5000000}, match_queue:[]_matches:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
 };
 
 const ADMINS = [3679030, 1905671];
@@ -219,10 +219,10 @@ async function api(path, method="GET", body=null){
 function normalizeState(data){
   data = data || {};
   const defaults = {
-    ok:true, user:null, events:[], event_registrations:[], event_brackets:[], event_bracket_pairs:[], event_registrations:[], event_brackets:[], event_bracket_pairs:[], fighters:[], matchmaking_top5:[], fights:[], ideas:[], leaderboard:[], all_time_rank_records:[], all_time_rank_records:[],
+    ok:true, user:null, events:[], event_registrations:[], event_brackets:[], event_bracket_pairs:[], event_registrations:[], event_brackets:[], event_bracket_pairs:[], fighters:[]_top5:[], fights:[], ideas:[], leaderboard:[], all_time_rank_records:[], all_time_rank_records:[],
     my_predictions:[], my_notifications:[], tournaments:[], tournament_entries:[],
     belts:[], teams:[], referees:[], audit:[], ref_checklists:[], fight_proofs:[], fight_logs:[],
-    challenges:[], alerts:[], fight_logs:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[]
+    challenges:[], alerts:[], fight_logs:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[]_settings:{range_amount:5000000}, match_queue:[]_matches:[]
   };
   return Object.assign(defaults, data);
 }
@@ -239,14 +239,14 @@ async function refresh(){
 }
 
 function renderTabs(){
-  let tabs = ["overview","eventsTab","notifications","fightcard","fightLogs","fighters","myfighter","matchmaking","challenges","points","exchange","picks","leaderboard","belts","ideas","rules","settings"];
+  let tabs = ["overview","eventsTab","notifications","fightcard","fightLogs","fighters","myfighter","challenges","points","exchange","picks","leaderboard","belts","ideas","rules","settings"];
   if(isAdmin() || canManage("posts")) tabs.push("announcements");
   if(isAdmin() || canAnyManage()) tabs.push("admin");
   if(isAdmin()) tabs.push("management");
   const adminOnlyTabs = ["admin"];
   if(!isAdmin() && !canAnyManage()) tabs = tabs.filter(t=>!adminOnlyTabs.includes(t));
   if(!isAdmin() && !canManage("posts")) tabs = tabs.filter(t=>t!=="announcements");
-  const labels = {overview:"Overview",eventsTab:"Events",notifications:"🔔",fightcard:"Fight Card",fightLogs:"Fight Logs",fighters:"Fighters",myfighter:"My Fighter",matchmaking:"Matchmaking",challenges:"Challenges",points:"Points",exchange:"Exchange",picks:"Picks",leaderboard:"Ranks",belts:"Belts",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin",management:"Management"};
+  const labels = {overview:"Overview",eventsTab:"Events",notifications:"🔔",fightcard:"Fight Card",fightLogs:"Fight Logs",fighters:"Fighters",myfighter:"My Fighter",challenges:"Challenges",points:"Points",exchange:"Exchange",picks:"Picks",leaderboard:"Ranks",belts:"Belts",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin",management:"Management"};
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
 
@@ -262,7 +262,7 @@ function render(){
   maybeBrowserNotify();
   $("userStatus").innerHTML = userLine();
   renderTabs();
-  const pages = {overview, eventsTab, notifications, fightcard, fightLogs, fighters, myfighter, matchmaking, challenges, points, exchange, picks, leaderboard, belts, ideas, rules, settings, admin, management};
+  const pages = {overview, eventsTab, notifications, fightcard, fightLogs, fighters, myfighter,  challenges, points, exchange, picks, leaderboard, belts, ideas, rules, settings, admin, management};
   if(typeof announcements === "function") pages.announcements = announcements;
   $("app").innerHTML = (pages[TAB] || overview)();
   applyAdminOnlyUi();
@@ -413,7 +413,7 @@ function fighterCardArt(f){
   else if(wins >= 5) title = "Pillow Assassin";
   else if(losses >= 5) title = "Professional Punch Sponge";
   else if(wins > losses) title = "Meme Weapon Specialist";
-  return `<div class="fighter-card-art"><div class="avatar">${icon}</div><div class="name">${esc(f.nickname||f.name||"Fighter")}</div><div class="tag">${esc(title)}</div><div class="statline"><div><b>Rank</b><br>${points}</div><div><b>Record</b><br>${wins}-${losses}</div><div><b>Matched</b><br>${Number(f.matchmaking_count||0)}</div><div><b>Style</b><br>Unhinged</div></div></div>`;
+  return `<div class="fighter-card-art"><div class="avatar">${icon}</div><div class="name">${esc(f.nickname||f.name||"Fighter")}</div><div class="tag">${esc(title)}</div><div class="statline"><div><b>Rank</b><br>${points}</div><div><b>Record</b><br>${wins}-${losses}</div><div><b>Fights</b><br>${Number(f.record_w||0)+Number(f.record_l||0)}</div><div><b>Style</b><br>Unhinged</div></div></div>`;
 }
 
 
@@ -494,7 +494,7 @@ function eventsTab(){
 
 function overview(){
   return `<div class="grid wide">
-    <div class="card hero"><h3>🥊 Fight Night Controls</h3><p class="muted">Torn Fight Club is now running as a real app page. The Torn userscript is only the launcher.</p><button class="gold" onclick="setTab('fightcard')">Fight Card</button><button class="green" onclick="setTab('eventsTab')">Events</button><button class="green" onclick="setTab('matchmaking')">Matchmaking</button><button class="blue" onclick="setTab('fighters')">Register Fighter</button><button class="blue" onclick="setTab('points')">Get Points</button></div>
+    <div class="card hero"><h3>🥊 Fight Night Controls</h3><p class="muted">Torn Fight Club is now running as a real app page. The Torn userscript is only the launcher.</p><button class="gold" onclick="setTab('fightcard')">Fight Card</button><button class="green" onclick="setTab('eventsTab')">Events</button><button class="blue" onclick="setTab('fighters')">Register Fighter</button><button class="blue" onclick="setTab('points')">Get Points</button></div>
     ${nextFightHeroHtml()}
     <div class="card"><h3>Notifications</h3>${typeof notificationPill==="function"?notificationPill():""}${typeof notificationList==="function"?notificationList(3):`<div class="empty">No notifications.</div>`}</div>
     <div class="card"><h3>Quick Status</h3><div class="mini">Fighters: ${(STATE.fighters||[]).length}</div><div class="mini">Fights: ${(STATE.fights||[]).length}</div><div class="mini">Open challenges: ${(STATE.challenges||[]).filter(c=>!['fight_created','converted'].includes(String(c.status||''))).filter(c=>String(c.status||"")==="pending").length}</div><div class="mini">Your points: ${STATE.user ? esc(STATE.user.prediction_points||0) : "Login needed"}</div></div>
@@ -804,7 +804,7 @@ function myfighter(){
   return `<div class="grid wide">
     <div class="card hero">
       <h3>My Fighter</h3>
-      <p class="muted">Each user can have one fighter profile. Once registered, you cannot create a second fighter. Update stats here to refresh your private matchmaking stats from Torn.</p>
+      <p class="muted">Each user can have one fighter profile. Once registered, you cannot create a second fighter. Update stats here to refresh your private stats from Torn.</p>
       ${STATE.user ? `<button class="blue" onclick="setTab('fighters')">Register Fighter</button>` : `<button class="blue" onclick="setTab('settings')">Login</button>`}
     </div>
     <div class="card">
@@ -813,7 +813,7 @@ function myfighter(){
     </div>
     <div class="card">
       <h3>Update Current Stats</h3>
-      <p class="muted">Paste your Torn API key to refresh your private effective/total stats for matchmaking. The key is used once and not stored.</p>
+      <p class="muted">Paste your Torn API key to refresh your private private stats. The key is used once and not stored.</p>
       ${STATE.user ? `<input id="fighterStatsKey" type="password" placeholder="Torn API key"><button class="green" onclick="updateMyFighterStats()">Update Fighter Stats</button>` : `<div class="empty">Login first.</div>`}
     </div>
     <div class="card">
@@ -822,27 +822,10 @@ function myfighter(){
     </div>
   </div>`;
 }
-function fmtStatsRange(total, range){total=Number(total||0);range=Number(range||5000000);return total?`${(total-range).toLocaleString()} - ${(total+range).toLocaleString()}`:"Private until queued";}
-function myQueueEntry(){
-  if(!STATE.user) return null;
-  return (STATE.match_queue||[]).find(q=>Number(q.user_torn_id)===Number(STATE.user.torn_id) && ["waiting","matched"].includes(String(q.status||"")));
-}
-function matchmakingMatchesHtml(){
-  const matches=STATE.matchmaking_matches||[];
-  if(!matches.length)return `<div class="empty">No matches yet.</div>`;
-  return matches.map(m=>`<div class="card"><h3>🥊 ${esc(m.user_a_name||("User "+m.user_a_torn_id))} VS ${esc(m.user_b_name||("User "+m.user_b_torn_id))}</h3><span class="pill ${m.status==="pending_admin"?"warn":m.status==="fight_created"?"good":"live"}">${esc(m.status)}</span><span class="pill">Diff: ${Number(m.stats_diff||0).toLocaleString()}</span><span class="pill">Range: ±${Number(m.range_amount||0).toLocaleString()}</span><div class="muted">Exact effective stats stay private to users.</div>${m.fight_id?`<div class="pill good">Fight #${esc(m.fight_id)}</div>`:""}${isAdmin()?`<div class="row" style="margin-top:8px"><input id="mmNote-${m.id}" placeholder="Admin note optional">${m.status==="pending_admin"?`<button class="gold" onclick="setMatchStatus(${m.id},'approved')">Approve</button><button class="red" onclick="setMatchStatus(${m.id},'rejected')">Reject</button>`:""}</div>${m.status==="pending_admin"||m.status==="approved"?`<div class="mini"><h3>Create Fight From Match</h3><select id="mmEvent-${m.id}">${eventOptions()}</select><input id="mmRound-${m.id}" placeholder="Round name" value="Matched Fight"><input id="mmRules-${m.id}" placeholder="Rules" value="Similar stats matchmaking fight"><input id="mmStart-${m.id}" placeholder="Start time"><input id="mmSpectate-${m.id}" placeholder="Spectate link optional"><button class="green" onclick="createFightFromMatch(${m.id})">Create Fight</button></div>`:""}`:""}</div>`).join("");
-}
-function matchmakingQueueHtml(){
-  const q=STATE.match_queue||[];
-  if(!q.length)return `<div class="empty">No one in queue.</div>`;
-  return q.map(x=>`<div class="mini"><b>${esc(x.user_name||("User "+x.user_torn_id))}</b><span class="pill ${x.status==="waiting"?"warn":x.status==="matched"?"good":"live"}">${esc(x.status)}</span><div class="muted">Range: ${esc(fmtStatsRange(x.total_stats,x.range_amount))}</div><div class="muted">${esc(x.created_at||"")}</div></div>`).join("");
-}
-function matchmaking(){
-  const s=STATE.matchmaking_settings||{range_amount:5000000};
-  const mine=myQueueEntry();
-  const myFighters=STATE.user?(STATE.fighters||[]).filter(f=>Number(f.torn_id)===Number(STATE.user.torn_id)):[];
-  return `<div class="card hero"><h3>🥊 Matchmaking Queue</h3><p class="muted">Enter queue and Fight Club will look for a waiting player within the stat range.</p><span class="pill good">Current range: ±${Number(s.range_amount||5000000).toLocaleString()} effective battle stats</span>${mine?`<span class="pill ${mine.status==="waiting"?"warn":"good"}">Your status: ${esc(mine.status)}</span>`:""}</div><div class="grid wide" style="margin-top:10px"><div class="card"><h3>Enter Queue</h3>${STATE.user?`<p class="muted">Exact effective battle stats stay private. If queue says no stats found, go to Settings, log out, then log back in so the app can save your stats for matchmaking.</p><select id="mmFighter">${myFighters.map(f=>`<option value="${f.id}">${esc(f.nickname||f.name)} [${f.id}]</option>`).join("")}<option value="">No fighter profile / use account</option></select><button class="green" onclick="enterMatchmaking()">Enter Queue</button><button class="red" onclick="leaveMatchmaking()">Leave Queue</button>`:`<div class="empty">Login first.</div><button class="blue" onclick="setTab('settings')">Go to Settings / Re-login</button>`}</div><div class="card"><h3>Your Match Info</h3>${mine?`<span class="pill">Queue ID ${esc(mine.id)}</span><span class="pill">${esc(mine.status)}</span><div class="muted">Fair effective range: ${esc(fmtStatsRange(mine.total_stats,mine.range_amount))}</div>`:`<div class="empty">You are not in queue.</div>`}</div></div><div class="section-title">Matches</div><div class="grid wide">${matchmakingMatchesHtml()}</div>${isAdmin()?`<div class="section-title">Admin Matchmaking</div><div class="grid wide"><div class="card"><h3>Settings</h3><input id="mmRange" type="number" value="${esc(s.range_amount||5000000)}" placeholder="Range amount"><button class="gold" onclick="saveMatchmakingSettings()">Save Match Range</button></div><div class="card"><h3>Queue</h3>${matchmakingQueueHtml()}</div></div>`:""}`;
-}
+
+
+
+
 
 function challenges(){
   const mine = myProfiles();
@@ -889,8 +872,7 @@ function leaderboard(){
   const mmTop = (STATE.matchmaking_top5||[]).slice(0,5);
   const allTime = (STATE.all_time_rank_records||[]).slice(0,10);
   return `<div class="grid wide">
-    <div class="card"><h3>Current Top 5 Fighters</h3>${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${esc(f.rank_points||0)} <span class="muted">Record ${esc(f.record_w||0)}-${esc(f.record_l||0)}</span></div>`).join("") || `<div class="empty">No current ranks yet.</div>`}</div>
-    <div class="card"><h3>Matchmaking Top 5</h3>${mmTop.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> matched ${esc(f.matchmaking_count||0)} times <span class="muted">rank ${esc(f.rank_points||0)}</span></div>`).join("") || `<div class="empty">No matchmaking records yet.</div>`}</div>
+    <div class="card"><h3>Current Top 5 Fighters</h3>${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${esc(f.rank_points||0)} <span class="muted">Record ${esc(f.record_w||0)}-${esc(f.record_l||0)}</span></div>`).join("") || `<div class="empty">No current ranks yet.</div>`}</div>`).join("") || `<div class="empty">No matchmaking records yet.</div>`}</div>
     <div class="card"><h3>Top 5 Prediction Points</h3>${topUsers.map((u,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(u.name)}</b> — ${esc(u.prediction_points)} pts</div>`).join("") || `<div class="empty">None yet.</div>`}</div>
     <div class="card wide-card"><h3>All-Time Rank Records</h3><p class="muted">Saved snapshots from rank resets. These stay even when current ranks are cleared.</p>${allTime.map((r,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(r.nickname||r.name)}</b> archived rank ${esc(r.rank_points||0)} <span class="muted">Record ${esc(r.record_w||0)}-${esc(r.record_l||0)} • ${esc(r.reset_label||"Reset")} • ${esc(r.created_at||"")}</span></div>`).join("") || `<div class="empty">No all-time records saved yet.</div>`}</div>
   </div>`;
@@ -1275,7 +1257,7 @@ function management(){
     ["fights","Fight/event controls"],
     ["points","Point approval/settings"],
     ["rewards","Reward slot/request controls"],
-    ["matchmaking","Matchmaking approval/create fights"],
+    ["Matchmaking approval/create fights"],
     ["logs","Fight log review"],
     ["ranks","Reset ranks"],
     ["posts","Posts/announcement generator"],
@@ -1305,7 +1287,7 @@ function management(){
       <div class="mini"><b>Fights:</b> create/edit fights/events and side wagers.</div>
       <div class="mini"><b>Points:</b> approve point purchases and set point rate.</div>
       <div class="mini"><b>Rewards:</b> set exchange rewards and complete/reject reward requests.</div>
-      <div class="mini"><b>Matchmaking:</b> approve/reject matches and create fights from matches.</div>
+      
       <div class="mini"><b>Logs:</b> approve/reject fight logs and mark fights done.</div>
       <div class="mini"><b>Ranks:</b> reset current ranks into all-time records.</div>
       <div class="mini"><b>Posts:</b> use admin-only announcement generator.</div>
@@ -1718,17 +1700,9 @@ function requestPointsFromExchange(){
 }
 
 
-function enterMatchmaking(){action("/api/matchmaking/enter",{fighter_id:$("mmFighter")?$("mmFighter").value:""},"Entered matchmaking queue.");}
-function leaveMatchmaking(){
-  if(STATE.user){
-    STATE.match_queue = (STATE.match_queue||[]).filter(q=>Number(q.user_torn_id)!==Number(STATE.user.torn_id));
-    render();
-  }
-  action("/api/matchmaking/leave",{},"Left matchmaking queue.");
-}
-function saveMatchmakingSettings(){action("/api/admin/matchmaking/settings",{range_amount:$("mmRange").value},"Match range saved.");}
-function setMatchStatus(id,status){action("/api/admin/matchmaking/matches/"+id+"/status",{status,admin_note:$("mmNote-"+id)?$("mmNote-"+id).value:""},"Match updated.");}
-function createFightFromMatch(id){action("/api/admin/matchmaking/matches/"+id+"/create-fight",{event_id:$("mmEvent-"+id).value,round_name:$("mmRound-"+id).value,rule_set:$("mmRules-"+id).value,starts_at:$("mmStart-"+id).value,spectate_url:$("mmSpectate-"+id).value},"Fight created from match.");}
+
+
+
 
 
 function submitFightLog(fightId){
