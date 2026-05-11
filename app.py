@@ -751,11 +751,15 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.9.4",
+        "version": "4.9.5",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
     })
+
+@app.get("/app-pda")
+def app_pda_page():
+    return app.send_static_file("fight-club-app.html")
 
 
 @app.get("/app")
