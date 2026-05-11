@@ -118,13 +118,26 @@ header{display:block!important}
         box.appendChild(p);
       }
       if(app && (!app.textContent || app.textContent.indexOf("Loading Fight Club")>=0)){
-        app.innerHTML='<div class="card hero"><h3>🥊 PDA App Error</h3><p class="muted">'+String(msg||"The PDA webview failed to load the app script.")+'</p><button onclick="location.reload()">Reload</button><button onclick="location.href=\\'https://torn-fight-club.onrender.com/app?fresh=\\'+Date.now()">Open Fresh</button></div>';
+        app.innerHTML="";
+        var card=document.createElement("div");
+        card.className="card hero";
+        var h=document.createElement("h3");
+        h.textContent="🥊 PDA App Error";
+        var p2=document.createElement("p");
+        p2.className="muted";
+        p2.textContent=String(msg||"The PDA webview failed to load the app script.");
+        var reload=document.createElement("button");
+        reload.textContent="Reload";
+        reload.onclick=function(){ location.reload(); };
+        var fresh=document.createElement("button");
+        fresh.textContent="Open Fresh";
+        fresh.onclick=function(){ location.href="/app?fresh="+Date.now(); };
+        card.appendChild(h); card.appendChild(p2); card.appendChild(reload); card.appendChild(fresh);
+        app.appendChild(card);
       }
     }catch(e){}
   }
-  window.addEventListener("error",function(e){
-    showPdaFallback(e && e.message ? e.message : "Script error");
-  });
+  window.addEventListener("error",function(e){showPdaFallback(e && e.message ? e.message : "Script error");});
   window.addEventListener("unhandledrejection",function(e){
     var r=e && e.reason;
     showPdaFallback(r && r.message ? r.message : String(r||"Promise error"));
@@ -137,6 +150,43 @@ header{display:block!important}
       }
     }catch(e){}
   },8000);
+})();
+</script>
+
+
+<script id="fightClubBootWatchdog">
+(function(){
+  window.fightClubBootWatchdog = true;
+  function fail(msg){
+    try{
+      var app=document.getElementById("app");
+      if(!app) return;
+      var txt=app.textContent||"";
+      if(txt.indexOf("Loading Fight Club")===-1 && txt.indexOf("Connecting to backend")===-1) return;
+      app.innerHTML = "";
+      var box=document.createElement("div");
+      box.className="card hero";
+      var h=document.createElement("h3");
+      h.textContent="Connection / Script Error";
+      var p=document.createElement("p");
+      p.className="muted";
+      p.textContent=String(msg||"The app did not finish loading.");
+      var retry=document.createElement("button");
+      retry.textContent="Retry";
+      retry.onclick=function(){ location.reload(); };
+      var fresh=document.createElement("button");
+      fresh.textContent="Open Fresh";
+      fresh.onclick=function(){ location.href=location.pathname+"?fresh="+Date.now(); };
+      var api=document.createElement("button");
+      api.textContent="Check API State";
+      api.onclick=function(){ location.href="/api/state"; };
+      box.appendChild(h); box.appendChild(p); box.appendChild(retry); box.appendChild(fresh); box.appendChild(api);
+      app.appendChild(box);
+    }catch(e){}
+  }
+  window.addEventListener("error",function(e){fail(e&&e.message?e.message:"Script error");});
+  window.addEventListener("unhandledrejection",function(e){var r=e&&e.reason;fail(r&&r.message?r.message:String(r||"Promise error"));});
+  setTimeout(function(){fail("Still loading after 10 seconds. The frontend hit an error or /api/state did not answer.");},10000);
 })();
 </script>
 
@@ -164,8 +214,8 @@ const BASE = "https://torn-fight-club.onrender.com";
 let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
-  ok: true, user: null, events: [], event_registrations: [], event_brackets: [], event_bracket_pairs: [], fighters: []_top5: [], fights: [], ideas: [], leaderboard: [], all_time_rank_records: [],
-  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_logs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], fight_logs: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[]_settings:{range_amount:5000000}, match_queue:[]_matches:[]_settings:{range_amount:5000000}, match_queue:[]_matches:[], reward_slots:[], reward_requests:[]_settings:{range_amount:5000000}, match_queue:[]_matches:[]_settings:{range_amount:5000000}, match_queue:[]_matches:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
+  ok: true, user: null, events: [], event_registrations: [], event_brackets: [], event_bracket_pairs: [], fighters: [], fights: [], ideas: [], leaderboard: [], all_time_rank_records: [],
+  my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_logs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], fight_logs: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], reward_slots:[], reward_requests:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
 };
 
 const ADMINS = [3679030, 1905671];
@@ -219,10 +269,10 @@ async function api(path, method="GET", body=null){
 function normalizeState(data){
   data = data || {};
   const defaults = {
-    ok:true, user:null, events:[], event_registrations:[], event_brackets:[], event_bracket_pairs:[], event_registrations:[], event_brackets:[], event_bracket_pairs:[], fighters:[]_top5:[], fights:[], ideas:[], leaderboard:[], all_time_rank_records:[], all_time_rank_records:[],
+    ok:true, user:null, events:[], event_registrations:[], event_brackets:[], event_bracket_pairs:[], event_registrations:[], event_brackets:[], event_bracket_pairs:[], fighters:[], fights:[], ideas:[], leaderboard:[], all_time_rank_records:[],
     my_predictions:[], my_notifications:[], tournaments:[], tournament_entries:[],
     belts:[], teams:[], referees:[], audit:[], ref_checklists:[], fight_proofs:[], fight_logs:[],
-    challenges:[], alerts:[], fight_logs:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[]_settings:{range_amount:5000000}, match_queue:[]_matches:[]
+    challenges:[], alerts:[], fight_logs:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[]
   };
   return Object.assign(defaults, data);
 }
@@ -869,12 +919,21 @@ function picks(){
 function leaderboard(){
   const fs = [...(STATE.fighters||[])].sort((a,b)=>(b.rank_points||0)-(a.rank_points||0)).slice(0,5);
   const topUsers = (STATE.leaderboard||[]).slice(0,5);
-  const mmTop = (STATE.matchmaking_top5||[]).slice(0,5);
   const allTime = (STATE.all_time_rank_records||[]).slice(0,10);
   return `<div class="grid wide">
-    <div class="card"><h3>Current Top 5 Fighters</h3>${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${esc(f.rank_points||0)} <span class="muted">Record ${esc(f.record_w||0)}-${esc(f.record_l||0)}</span></div>`).join("") || `<div class="empty">No current ranks yet.</div>`}</div>`).join("") || `<div class="empty">No matchmaking records yet.</div>`}</div>
-    <div class="card"><h3>Top 5 Prediction Points</h3>${topUsers.map((u,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(u.name)}</b> — ${esc(u.prediction_points)} pts</div>`).join("") || `<div class="empty">None yet.</div>`}</div>
-    <div class="card wide-card"><h3>All-Time Rank Records</h3><p class="muted">Saved snapshots from rank resets. These stay even when current ranks are cleared.</p>${allTime.map((r,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(r.nickname||r.name)}</b> archived rank ${esc(r.rank_points||0)} <span class="muted">Record ${esc(r.record_w||0)}-${esc(r.record_l||0)} • ${esc(r.reset_label||"Reset")} • ${esc(r.created_at||"")}</span></div>`).join("") || `<div class="empty">No all-time records saved yet.</div>`}</div>
+    <div class="card">
+      <h3>Current Top 5 Fighters</h3>
+      ${fs.map((f,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(f.nickname||f.name)}</b> rank ${esc(f.rank_points||0)} <span class="muted">Record ${esc(f.record_w||0)}-${esc(f.record_l||0)}</span></div>`).join("") || `<div class="empty">No current ranks yet.</div>`}
+    </div>
+    <div class="card">
+      <h3>Top 5 Prediction Points</h3>
+      ${topUsers.map((u,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(u.name)}</b> — ${esc(u.prediction_points)} pts</div>`).join("") || `<div class="empty">None yet.</div>`}
+    </div>
+    <div class="card wide-card">
+      <h3>All-Time Rank Records</h3>
+      <p class="muted">Saved snapshots from rank resets. These stay even when current ranks are cleared.</p>
+      ${allTime.map((r,i)=>`<div class="mini"><span class="rank">#${i+1}</span><b>${esc(r.nickname||r.name)}</b> archived rank ${esc(r.rank_points||0)} <span class="muted">Record ${esc(r.record_w||0)}-${esc(r.record_l||0)} • ${esc(r.reset_label||"Reset")} • ${esc(r.created_at||"")}</span></div>`).join("") || `<div class="empty">No all-time records saved yet.</div>`}
+    </div>
   </div>`;
 }
 
@@ -1788,6 +1847,13 @@ function updateMyFighterStats(){
   if(!key){ toast("Paste your Torn API key first."); return; }
   action("/api/fighter/update-stats",{api_key:key},"Fighter stats updated.");
 }
+
+
+function enterMatchmaking(){ toast("Matchmaking is disabled for now."); }
+function leaveMatchmaking(){ toast("Matchmaking is disabled for now."); }
+function saveMatchmakingSettings(){ toast("Matchmaking is disabled for now."); }
+function setMatchStatus(){ toast("Matchmaking is disabled for now."); }
+function createFightFromMatch(){ toast("Matchmaking is disabled for now."); }
 
 render();
 refresh();
