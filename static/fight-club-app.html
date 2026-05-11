@@ -788,7 +788,10 @@ function myfighter(){
 
 
 function fmtStatsRange(total, range){total=Number(total||0);range=Number(range||5000000);return total?`${(total-range).toLocaleString()} - ${(total+range).toLocaleString()}`:"Private until queued";}
-function myQueueEntry(){return STATE.user?(STATE.match_queue||[]).find(q=>Number(q.user_torn_id)===Number(STATE.user.torn_id)):null;}
+function myQueueEntry(){
+  if(!STATE.user) return null;
+  return (STATE.match_queue||[]).find(q=>Number(q.user_torn_id)===Number(STATE.user.torn_id) && ["waiting","matched"].includes(String(q.status||"")));
+}
 function matchmakingMatchesHtml(){
   const matches=STATE.matchmaking_matches||[];
   if(!matches.length)return `<div class="empty">No matches yet.</div>`;
@@ -1623,7 +1626,13 @@ function requestPointsFromExchange(){
 
 
 function enterMatchmaking(){action("/api/matchmaking/enter",{fighter_id:$("mmFighter")?$("mmFighter").value:""},"Entered matchmaking queue.");}
-function leaveMatchmaking(){action("/api/matchmaking/leave",{},"Left matchmaking queue.");}
+function leaveMatchmaking(){
+  if(STATE.user){
+    STATE.match_queue = (STATE.match_queue||[]).filter(q=>Number(q.user_torn_id)!==Number(STATE.user.torn_id));
+    render();
+  }
+  action("/api/matchmaking/leave",{},"Left matchmaking queue.");
+}
 function saveMatchmakingSettings(){action("/api/admin/matchmaking/settings",{range_amount:$("mmRange").value},"Match range saved.");}
 function setMatchStatus(id,status){action("/api/admin/matchmaking/matches/"+id+"/status",{status,admin_note:$("mmNote-"+id)?$("mmNote-"+id).value:""},"Match updated.");}
 function createFightFromMatch(id){action("/api/admin/matchmaking/matches/"+id+"/create-fight",{event_id:$("mmEvent-"+id).value,round_name:$("mmRound-"+id).value,rule_set:$("mmRules-"+id).value,starts_at:$("mmStart-"+id).value,spectate_url:$("mmSpectate-"+id).value},"Fight created from match.");}
