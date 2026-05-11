@@ -370,6 +370,21 @@ def init_db():
             );
 
 
+
+            CREATE TABLE IF NOT EXISTS all_time_rank_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fighter_id INTEGER,
+                torn_id INTEGER,
+                name TEXT,
+                nickname TEXT,
+                rank_points INTEGER NOT NULL DEFAULT 0,
+                record_w INTEGER NOT NULL DEFAULT 0,
+                record_l INTEGER NOT NULL DEFAULT 0,
+                reset_label TEXT,
+                created_at TEXT NOT NULL,
+                reset_by INTEGER
+            );
+
             CREATE TABLE IF NOT EXISTS fight_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 fight_id INTEGER NOT NULL,
@@ -736,7 +751,7 @@ def home():
     return jsonify({
         "ok": True,
         "app": APP_NAME,
-        "version": "4.9.2",
+        "version": "4.9.4",
         "admins": sorted(list(ADMIN_IDS)),
         "userscript": "https://torn-fight-club.onrender.com/static/torn-fight-club.user.js",
         "note": "Prediction points are for entertainment only. This app does not handle real Torn money/items betting.",
@@ -834,6 +849,12 @@ def state():
               f.id DESC
         """).fetchall()]
         ideas = [dict(x) for x in con.execute("SELECT * FROM ideas ORDER BY id DESC LIMIT 75").fetchall()]
+        all_time_rank_records = [dict(x) for x in con.execute("""
+            SELECT *
+            FROM all_time_rank_records
+            ORDER BY rank_points DESC, record_w DESC, id DESC
+            LIMIT 25
+        """).fetchall()]
         leaderboard = [dict(x) for x in con.execute("""
             SELECT torn_id, name, prediction_points, role
             FROM users
@@ -975,6 +996,7 @@ def state():
         "fights": fights,
         "ideas": ideas,
         "leaderboard": leaderboard,
+        "all_time_rank_records": all_time_rank_records,
         "my_predictions": predictions,
         "my_notifications": my_notifications,
         "tournaments": tournaments,
@@ -2636,6 +2658,60 @@ def clear_read_notifications():
         """, (request.user["torn_id"],))
 
     return jsonify({"ok": True})
+
+
+@app.post("/api/admin/ranks/reset")
+@require_admin
+def reset_current_ranks():
+    data = request.get_json(force=True, silent=True) or {}
+    confirm = (data.get("confirm") or "").strip()
+    reset_label = (data.get("reset_label") or "Rank reset").strip()[:120]
+    reset_records = bool(data.get("reset_records", False))
+
+    if confirm != "RESET":
+        return jsonify({"ok": False, "error": "Type RESET to confirm"}), 400
+
+    with db() as con:
+        fighters = con.execute("""
+            SELECT id, torn_id, name, nickname, rank_points, record_w, record_l
+            FROM fighters
+            WHERE active=1
+            ORDER BY rank_points DESC, record_w DESC
+        """).fetchall()
+
+        for f in fighters:
+            # Save a snapshot before clearing current rank.
+            con.execute("""
+                INSERT INTO all_time_rank_records(
+                    fighter_id, torn_id, name, nickname, rank_points, record_w, record_l,
+                    reset_label, created_at, reset_by
+                )
+                VALUES(?,?,?,?,?,?,?,?,?,?)
+            """, (
+                f["id"],
+                f["torn_id"],
+                f["name"],
+                f["nickname"],
+                int(f["rank_points"] or 0),
+                int(f["record_w"] or 0),
+                int(f["record_l"] or 0),
+                reset_label,
+                now_iso(),
+                request.user["torn_id"],
+            ))
+
+        if reset_records:
+            con.execute("UPDATE fighters SET rank_points=0, record_w=0, record_l=0 WHERE active=1")
+        else:
+            con.execute("UPDATE fighters SET rank_points=0 WHERE active=1")
+
+        audit(con, request.user["torn_id"], "reset_current_ranks", "ranks:reset", {
+            "reset_label": reset_label,
+            "fighters_archived": len(fighters),
+            "reset_records": reset_records,
+        })
+
+    return jsonify({"ok": True, "fighters_archived": len(fighters)})
 
 
 if __name__ == "__main__":
