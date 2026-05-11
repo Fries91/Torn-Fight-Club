@@ -164,7 +164,7 @@ const BASE = "https://torn-fight-club.onrender.com";
 let TOKEN = localStorage.getItem("tfc_token") || "";
 let TAB = localStorage.getItem("tfc_tab") || "overview";
 let STATE = {
-  ok: true, user: null, events: [], fighters: [], matchmaking_top5: [], fights: [], ideas: [], leaderboard: [], all_time_rank_records: [],
+  ok: true, user: null, events: [], event_registrations: [], event_brackets: [], event_bracket_pairs: [], fighters: [], matchmaking_top5: [], fights: [], ideas: [], leaderboard: [], all_time_rank_records: [],
   my_predictions: [], tournaments: [], tournament_entries: [], belts: [], teams: [], referees: [], audit: [], ref_checklists: [], fight_proofs: [], fight_logs: [], fight_props: [], my_prop_wagers: [], challenges: [], alerts: [], fight_logs: [], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[], my_notifications: [], fight_props: [], my_prop_wagers: [], idea_votes: []
 };
 
@@ -219,7 +219,7 @@ async function api(path, method="GET", body=null){
 function normalizeState(data){
   data = data || {};
   const defaults = {
-    ok:true, user:null, events:[], fighters:[], matchmaking_top5:[], fights:[], ideas:[], leaderboard:[], all_time_rank_records:[], all_time_rank_records:[],
+    ok:true, user:null, events:[], event_registrations:[], event_brackets:[], event_bracket_pairs:[], event_registrations:[], event_brackets:[], event_bracket_pairs:[], fighters:[], matchmaking_top5:[], fights:[], ideas:[], leaderboard:[], all_time_rank_records:[], all_time_rank_records:[],
     my_predictions:[], my_notifications:[], tournaments:[], tournament_entries:[],
     belts:[], teams:[], referees:[], audit:[], ref_checklists:[], fight_proofs:[], fight_logs:[],
     challenges:[], alerts:[], fight_logs:[], point_settings:{item_name:'Xanax',item_amount:1,points_amount:100,pay_to_name:'Slimyfleshlite',pay_to_torn_id:1905671}, point_orders:[], reward_slots:[], reward_requests:[], matchmaking_settings:{range_amount:5000000}, match_queue:[], matchmaking_matches:[]
@@ -239,14 +239,14 @@ async function refresh(){
 }
 
 function renderTabs(){
-  let tabs = ["overview","notifications","fightcard","fightLogs","fighters","myfighter","matchmaking","challenges","points","exchange","picks","leaderboard","belts","ideas","rules","settings"];
+  let tabs = ["overview","eventsTab","notifications","fightcard","fightLogs","fighters","myfighter","matchmaking","challenges","points","exchange","picks","leaderboard","belts","ideas","rules","settings"];
   if(isAdmin() || canManage("posts")) tabs.push("announcements");
   if(isAdmin() || canAnyManage()) tabs.push("admin");
   if(isAdmin()) tabs.push("management");
   const adminOnlyTabs = ["admin"];
   if(!isAdmin() && !canAnyManage()) tabs = tabs.filter(t=>!adminOnlyTabs.includes(t));
   if(!isAdmin() && !canManage("posts")) tabs = tabs.filter(t=>t!=="announcements");
-  const labels = {overview:"Overview",notifications:"🔔",fightcard:"Fight Card",fightLogs:"Fight Logs",fighters:"Fighters",myfighter:"My Fighter",matchmaking:"Matchmaking",challenges:"Challenges",points:"Points",exchange:"Exchange",picks:"Picks",leaderboard:"Ranks",belts:"Belts",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin",management:"Management"};
+  const labels = {overview:"Overview",eventsTab:"Events",notifications:"🔔",fightcard:"Fight Card",fightLogs:"Fight Logs",fighters:"Fighters",myfighter:"My Fighter",matchmaking:"Matchmaking",challenges:"Challenges",points:"Points",exchange:"Exchange",picks:"Picks",leaderboard:"Ranks",belts:"Belts",announcements:"Posts",ideas:"Ideas",rules:"Rules",settings:"Settings",admin:"Admin",management:"Management"};
   $("tabs").innerHTML = tabs.map(t=>`<button class="tab ${TAB===t?"active":""}" onclick="setTab('${t}')">${labels[t]}</button>`).join("");
 }
 
@@ -262,7 +262,7 @@ function render(){
   maybeBrowserNotify();
   $("userStatus").innerHTML = userLine();
   renderTabs();
-  const pages = {overview, notifications, fightcard, fightLogs, fighters, myfighter, matchmaking, challenges, points, exchange, picks, leaderboard, belts, ideas, rules, settings, admin, management};
+  const pages = {overview, eventsTab, notifications, fightcard, fightLogs, fighters, myfighter, matchmaking, challenges, points, exchange, picks, leaderboard, belts, ideas, rules, settings, admin, management};
   if(typeof announcements === "function") pages.announcements = announcements;
   $("app").innerHTML = (pages[TAB] || overview)();
   applyAdminOnlyUi();
@@ -403,7 +403,7 @@ function nextFightHeroHtml(){
   </div>`;
 }
 function fighterCardArt(f){
-  if(!f) return `<div class="empty">Register a fighter to generate your card.</div>`;
+  if(!f) return `<div class="empty">Register / update your fighter to generate your card.</div>`;
   const points = Number(f.rank_points||0), wins = Number(f.record_w||0), losses = Number(f.record_l||0);
   const icons = ["🥊","🔥","💀","🛏️","⚔️","🤡","👑","🧨"];
   const icon = icons[Math.abs(Number(f.id||0)) % icons.length];
@@ -416,9 +416,85 @@ function fighterCardArt(f){
   return `<div class="fighter-card-art"><div class="avatar">${icon}</div><div class="name">${esc(f.nickname||f.name||"Fighter")}</div><div class="tag">${esc(title)}</div><div class="statline"><div><b>Rank</b><br>${points}</div><div><b>Record</b><br>${wins}-${losses}</div><div><b>Matched</b><br>${Number(f.matchmaking_count||0)}</div><div><b>Style</b><br>Unhinged</div></div></div>`;
 }
 
+
+function eventRegsFor(eventId){
+  return (STATE.event_registrations||[]).filter(r=>Number(r.event_id)===Number(eventId));
+}
+function myEventReg(eventId){
+  if(!STATE.user) return null;
+  return eventRegsFor(eventId).find(r=>Number(r.user_torn_id)===Number(STATE.user.torn_id));
+}
+function latestBracketFor(eventId){
+  return (STATE.event_brackets||[]).filter(b=>Number(b.event_id)===Number(eventId)).sort((a,b)=>Number(b.id)-Number(a.id))[0];
+}
+function bracketPairsHtml(eventId){
+  const b = latestBracketFor(eventId);
+  if(!b) return `<div class="empty">No bracket generated yet.</div>`;
+  const pairs = (STATE.event_bracket_pairs||[]).filter(p=>Number(p.bracket_id)===Number(b.id));
+  return `<div class="mini"><b>${esc(b.title||"Generated bracket")}</b> <span class="pill">${esc(b.bracket_style)}</span></div>
+    ${pairs.map(p=>`<div class="mini"><b>Match ${esc(p.match_no)}</b>: ${esc(p.name_a||"TBA")} VS ${esc(p.name_b||"BYE")}</div>`).join("")}`;
+}
+function eventsTab(){
+  const evs = (STATE.events||[]).slice().sort((a,b)=>Number(b.id)-Number(a.id));
+  const myFighters = STATE.user ? (STATE.fighters||[]).filter(f=>Number(f.torn_id)===Number(STATE.user.torn_id)) : [];
+  return `<div class="card hero">
+    <h3>📅 Events & Tournaments</h3>
+    <p class="muted">Register for upcoming Fight Club events/tournaments. Admins can generate brackets from registered fighters.</p>
+  </div>
+  <div class="grid wide" style="margin-top:10px">
+    ${evs.length ? evs.map(ev=>{
+      const regs = eventRegsFor(ev.id);
+      const mine = myEventReg(ev.id);
+      return `<div class="card">
+        <h3>${esc(ev.name||ev.title||("Event #"+ev.id))}</h3>
+        <span class="pill">${esc(ev.event_type||ev.type||"event")}</span>
+        <span class="pill good">${regs.length} registered</span>
+        <div class="muted">${esc(ev.starts_at||ev.created_at||"")}</div>
+        ${ev.description?`<p>${esc(ev.description)}</p>`:""}
+        ${STATE.user?`
+          <div class="mini">
+            <h3>${mine?"Your Registration":"Register"}</h3>
+            ${mine?`<span class="pill good">Registered as ${esc(mine.fighter_name||mine.user_name)}</span><button class="red" onclick="unregisterEvent(${ev.id})">Unregister</button>`:`
+              <select id="eventFighter-${ev.id}">
+                ${myFighters.map(f=>`<option value="${f.id}">${esc(f.nickname||f.name)} [${f.id}]</option>`).join("")}
+                <option value="">Use my account name</option>
+              </select>
+              <input id="eventNotes-${ev.id}" placeholder="Optional note">
+              <button class="green" onclick="registerEvent(${ev.id})">Register For Event</button>
+            `}
+          </div>
+        `:`<button class="blue" onclick="setTab('settings')">Login to Register</button>`}
+        <div class="mini">
+          <h3>Current Bracket / Pairings</h3>
+          ${bracketPairsHtml(ev.id)}
+        </div>
+        ${isAdmin() || canManage("fights") ? `
+          <div class="mini">
+            <h3>Admin Bracket Generator</h3>
+            <select id="bracketStyle-${ev.id}">
+              <option value="single_elimination">Single Elimination</option>
+              <option value="random_pairs">Random Pairs</option>
+              <option value="round_robin">Round Robin</option>
+              <option value="king_of_the_hill">King of the Hill</option>
+              <option value="seeded_top_bottom">Seeded Top vs Bottom</option>
+            </select>
+            <input id="bracketTitle-${ev.id}" placeholder="Bracket title optional">
+            <button class="gold" onclick="generateBracket(${ev.id})">Generate Bracket</button>
+            <div class="muted">Generates from registered users only.</div>
+          </div>
+          <div class="mini">
+            <h3>Registrations</h3>
+            ${regs.map(r=>`<div>${esc(r.fighter_name||r.user_name)} [${esc(r.user_torn_id)}]</div>`).join("") || `<div class="empty">No registrations yet.</div>`}
+          </div>
+        `:""}
+      </div>`;
+    }).join("") : `<div class="empty">No events yet. Admin can create events in Admin tab.</div>`}
+  </div>`;
+}
+
 function overview(){
   return `<div class="grid wide">
-    <div class="card hero"><h3>🥊 Fight Night Controls</h3><p class="muted">Torn Fight Club is now running as a real app page. The Torn userscript is only the launcher.</p><button class="gold" onclick="setTab('fightcard')">Fight Card</button><button class="green" onclick="setTab('matchmaking')">Matchmaking</button><button class="blue" onclick="setTab('fighters')">Register Fighter</button><button class="blue" onclick="setTab('points')">Get Points</button></div>
+    <div class="card hero"><h3>🥊 Fight Night Controls</h3><p class="muted">Torn Fight Club is now running as a real app page. The Torn userscript is only the launcher.</p><button class="gold" onclick="setTab('fightcard')">Fight Card</button><button class="green" onclick="setTab('eventsTab')">Events</button><button class="green" onclick="setTab('matchmaking')">Matchmaking</button><button class="blue" onclick="setTab('fighters')">Register / Update Fighter</button><button class="blue" onclick="setTab('points')">Get Points</button></div>
     ${nextFightHeroHtml()}
     <div class="card"><h3>Notifications</h3>${typeof notificationPill==="function"?notificationPill():""}${typeof notificationList==="function"?notificationList(3):`<div class="empty">No notifications.</div>`}</div>
     <div class="card"><h3>Quick Status</h3><div class="mini">Fighters: ${(STATE.fighters||[]).length}</div><div class="mini">Fights: ${(STATE.fights||[]).length}</div><div class="mini">Open challenges: ${(STATE.challenges||[]).filter(c=>!['fight_created','converted'].includes(String(c.status||''))).filter(c=>String(c.status||"")==="pending").length}</div><div class="mini">Your points: ${STATE.user ? esc(STATE.user.prediction_points||0) : "Login needed"}</div></div>
@@ -726,12 +802,26 @@ function myfighter(){
   const mine = STATE.user ? (STATE.fighters||[]).filter(f=>Number(f.torn_id)===Number(STATE.user.torn_id)) : [];
   const f = mine[0];
   return `<div class="grid wide">
-    <div class="card hero"><h3>My Fighter</h3><p class="muted">Your fighter profile and generated Fight Club card.</p>${STATE.user ? `<button class="blue" onclick="setTab('fighters')">Register / Update Fighter</button>` : `<button class="blue" onclick="setTab('settings')">Login</button>`}</div>
-    <div class="card"><h3>My Fighter Profile</h3>${f ? `<div class="mini"><b>${esc(f.nickname||f.name)}</b><br>Record ${esc(f.record_w||0)}-${esc(f.record_l||0)} • Rank ${esc(f.rank_points||0)}</div>` : `<div class="empty">No fighter registered yet.</div>`}</div>
-    <div class="card"><h3>Generated Fighter Card</h3>${fighterCardArt(f)}</div>
+    <div class="card hero">
+      <h3>My Fighter</h3>
+      <p class="muted">Each user can have one fighter profile. Update stats here to refresh your private matchmaking stats from Torn.</p>
+      ${STATE.user ? `<button class="blue" onclick="setTab('fighters')">Register / Update Fighter</button>` : `<button class="blue" onclick="setTab('settings')">Login</button>`}
+    </div>
+    <div class="card">
+      <h3>My Fighter Profile</h3>
+      ${f ? `<div class="mini"><b>${esc(f.nickname||f.name)}</b><br>Record ${esc(f.record_w||0)}-${esc(f.record_l||0)} • Rank ${esc(f.rank_points||0)}<br><span class="muted">One fighter profile per user.</span></div>` : `<div class="empty">No fighter registered yet.</div>`}
+    </div>
+    <div class="card">
+      <h3>Update Current Stats</h3>
+      <p class="muted">Paste your Torn API key to refresh your private effective/total stats for matchmaking. The key is used once and not stored.</p>
+      ${STATE.user ? `<input id="fighterStatsKey" type="password" placeholder="Torn API key"><button class="green" onclick="updateMyFighterStats()">Update Fighter Stats</button>` : `<div class="empty">Login first.</div>`}
+    </div>
+    <div class="card">
+      <h3>Generated Fighter Card</h3>
+      ${typeof fighterCardArt==="function" ? fighterCardArt(f) : (f ? `<div class="mini">${esc(f.nickname||f.name)}</div>` : `<div class="empty">Register / update your fighter to generate your card.</div>`)}
+    </div>
   </div>`;
 }
-
 function fmtStatsRange(total, range){total=Number(total||0);range=Number(range||5000000);return total?`${(total-range).toLocaleString()} - ${(total+range).toLocaleString()}`:"Private until queued";}
 function myQueueEntry(){
   if(!STATE.user) return null;
@@ -1697,6 +1787,32 @@ function saveManager(key){
 function deleteManager(tornId){
   if(!confirm("Delete this manager?")) return;
   action("/api/admin/managers/"+tornId+"/delete",{},"Manager deleted.");
+}
+
+
+function registerEvent(eventId){
+  action("/api/events/"+eventId+"/register",{
+    fighter_id:$("eventFighter-"+eventId) ? $("eventFighter-"+eventId).value : "",
+    notes:$("eventNotes-"+eventId) ? $("eventNotes-"+eventId).value : ""
+  },"Registered for event.");
+}
+function unregisterEvent(eventId){
+  if(!confirm("Unregister from this event?")) return;
+  action("/api/events/"+eventId+"/unregister",{},"Unregistered from event.");
+}
+function generateBracket(eventId){
+  if(!confirm("Generate bracket from current registrations?")) return;
+  action("/api/admin/events/"+eventId+"/generate-bracket",{
+    bracket_style:$("bracketStyle-"+eventId).value,
+    title:$("bracketTitle-"+eventId).value
+  },"Bracket generated.");
+}
+
+
+function updateMyFighterStats(){
+  const key = $("fighterStatsKey") ? $("fighterStatsKey").value.trim() : "";
+  if(!key){ toast("Paste your Torn API key first."); return; }
+  action("/api/fighter/update-stats",{api_key:key},"Fighter stats updated.");
 }
 
 render();
